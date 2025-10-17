@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '2025/01/18 12:15'
+            APP_VERSION: '2025/01/18 12:20'
         };
 
         let gapiInited = false;
@@ -32,7 +32,7 @@
         let state = {
             groups: [
                 { id: 'group1', title: 'Todo', color: 'bg-gray-700', row: 0, items: [
-                    { id: '1', content: '新しいプロジェクトの企画書を作成', completed: false }
+                    { id: '1', content: '新しいプロジェクトの企画書を作成', completed: false, memo: '' }
                 ]},
                 { id: 'group2', title: '進行中', color: 'bg-green-800', row: 0, items: [] },
                 { id: 'group3', title: '完了', color: 'bg-purple-800', row: 0, items: [] }
@@ -46,6 +46,8 @@
             isAddingGroup: false,
             editingGroupId: null,
             editingGroupName: '',
+            editingTaskId: null,
+            editingTaskGroupId: null,
             isSignedIn: false,
             isSaving: false,
             folderId: null,
@@ -372,7 +374,8 @@
             const newTask = { 
                 id: Date.now().toString(), 
                 content: state.newTaskContent, 
-                completed: false 
+                completed: false,
+                memo: ''
             };
             state.groups = state.groups.map(group => 
                 group.id === groupId ? { ...group, items: [...group.items, newTask] } : group
@@ -504,6 +507,62 @@
             render();
         }
 
+        // タスク編集開始
+        function startEditTask(groupId, taskId) {
+            state.editingTaskId = taskId;
+            state.editingTaskGroupId = groupId;
+            render();
+            setTimeout(() => {
+                const input = document.getElementById(`task-content-input-${taskId}`);
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            }, 0);
+        }
+        
+        // タスク内容保存
+        async function saveTaskContent(groupId, taskId, newContent) {
+            if (!newContent.trim()) return;
+            
+            state.groups = state.groups.map(group =>
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map(item =>
+                            item.id === taskId ? { ...item, content: newContent } : item
+                        )
+                    }
+                    : group
+            );
+            state.editingTaskId = null;
+            state.editingTaskGroupId = null;
+            await saveToDrive();
+            render();
+        }
+        
+        // タスクメモ保存
+        async function saveTaskMemo(groupId, taskId, newMemo) {
+            state.groups = state.groups.map(group =>
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map(item =>
+                            item.id === taskId ? { ...item, memo: newMemo } : item
+                        )
+                    }
+                    : group
+            );
+            await saveToDrive();
+        }
+        
+        // タスク編集キャンセル
+        function cancelEditTask() {
+            state.editingTaskId = null;
+            state.editingTaskGroupId = null;
+            render();
+        }
+
         function render() {
             const row0Groups = state.groups.filter(g => g.row === 0);
             const row1Groups = state.groups.filter(g => g.row === 1);
@@ -563,19 +622,34 @@
                             ` : ''}
                             
                             <div class="space-y-2">
-                                ${group.items.map((item, itemIndex) => `
-                                    <div draggable="true" 
+                                ${group.items.map((item, itemIndex) => {
+                                    const isEditingThisTask = state.editingTaskId === item.id && state.editingTaskGroupId === group.id;
+                                    return `
+                                    <div draggable="${!isEditingThisTask}" 
                                          onDragStart="handleTaskDragStart(event, ${JSON.stringify(item).replace(/"/g, '&quot;')}, '${group.id}')" 
                                          onDragOver="handleDragOver(event)"
                                          onDrop="handleTaskDrop(event, '${group.id}', ${itemIndex})"
-                                         class="bg-gray-700 rounded p-3 cursor-move hover:bg-gray-650 transition-colors group">
+                                         class="bg-gray-700 rounded p-3 ${!isEditingThisTask ? 'cursor-move' : ''} hover:bg-gray-650 transition-colors group">
                                         <div class="flex items-start gap-2">
                                             <button onclick="toggleComplete('${group.id}', '${item.id}')" 
                                                     class="flex-shrink-0 w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center transition-colors ${item.completed ? 'bg-green-500 border-green-500' : 'border-gray-500 hover:border-gray-400'}">
                                                 ${item.completed ? '<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
                                             </button>
                                             <div class="flex-1">
-                                                <p class="text-white text-sm ${item.completed ? 'line-through opacity-60' : ''}">${item.content}</p>
+                                                ${isEditingThisTask ? `
+                                                    <input id="task-content-input-${item.id}" type="text" value="${item.content}" 
+                                                           onkeypress="if(event.key==='Enter') { saveTaskContent('${group.id}', '${item.id}', this.value); event.target.blur(); }"
+                                                           onblur="if(state.editingTaskId === '${item.id}') saveTaskContent('${group.id}', '${item.id}', this.value)"
+                                                           class="w-full px-2 py-1 bg-gray-600 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"/>
+                                                    <textarea 
+                                                           onchange="saveTaskMemo('${group.id}', '${item.id}', this.value)"
+                                                           placeholder="メモを入力..."
+                                                           class="w-full px-2 py-1 bg-gray-600 text-white text-xs rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                                           rows="2">${item.memo || ''}</textarea>
+                                                ` : `
+                                                    <p class="text-white text-sm ${item.completed ? 'line-through opacity-60' : ''} cursor-pointer hover:text-blue-300" onclick="startEditTask('${group.id}', '${item.id}')">${item.content}</p>
+                                                    ${item.memo ? `<p class="text-gray-400 text-xs mt-1">${item.memo}</p>` : ''}
+                                                `}
                                             </div>
                                             <button onclick="deleteTask('${group.id}', '${item.id}')" 
                                                     class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-600 rounded flex-shrink-0">
@@ -583,7 +657,7 @@
                                             </button>
                                         </div>
                                     </div>
-                                `).join('')}
+                                `}).join('')}
                             </div>
                             
                             ${state.newTaskGroup !== group.id ? `
