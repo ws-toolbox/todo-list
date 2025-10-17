@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '2025/01/18 12:35'
+            APP_VERSION: '20250118-1240'
         };
 
         let gapiInited = false;
@@ -46,8 +46,8 @@
             isAddingGroup: false,
             editingGroupId: null,
             editingGroupName: '',
-            editingTaskId: null,
-            editingTaskGroupId: null,
+            selectedTaskId: null,
+            selectedTaskGroupId: null,
             isSignedIn: false,
             isSaving: false,
             folderId: null,
@@ -507,18 +507,25 @@
             render();
         }
 
-        // タスク編集開始
-        function startEditTask(groupId, taskId) {
-            state.editingTaskId = taskId;
-            state.editingTaskGroupId = groupId;
+        // タスク選択
+        function selectTask(groupId, taskId) {
+            state.selectedTaskId = taskId;
+            state.selectedTaskGroupId = groupId;
             render();
             setTimeout(() => {
-                const input = document.getElementById(`task-content-input-${taskId}`);
+                const input = document.getElementById('selected-task-name-input');
                 if (input) {
                     input.focus();
                     input.select();
                 }
             }, 0);
+        }
+        
+        // タスク選択解除
+        function deselectTask() {
+            state.selectedTaskId = null;
+            state.selectedTaskGroupId = null;
+            render();
         }
         
         // タスク内容保存
@@ -535,8 +542,6 @@
                     }
                     : group
             );
-            state.editingTaskId = null;
-            state.editingTaskGroupId = null;
             await saveToDrive();
             render();
         }
@@ -636,38 +641,24 @@
                             
                             <div class="space-y-2">
                                 ${group.items.map((item, itemIndex) => {
-                                    const isEditingThisTask = state.editingTaskId === item.id && state.editingTaskGroupId === group.id;
+                                    const isSelected = state.selectedTaskId === item.id && state.selectedTaskGroupId === group.id;
                                     return `
-                                    <div draggable="${!isEditingThisTask}" 
+                                    <div draggable="true" 
                                          onDragStart="handleTaskDragStart(event, ${JSON.stringify(item).replace(/"/g, '&quot;')}, '${group.id}')" 
                                          onDragOver="handleDragOver(event)"
                                          onDrop="handleTaskDrop(event, '${group.id}', ${itemIndex})"
-                                         class="bg-gray-700 rounded p-3 ${!isEditingThisTask ? 'cursor-move' : ''} hover:bg-gray-650 transition-colors group">
+                                         onclick="selectTask('${group.id}', '${item.id}')"
+                                         class="bg-gray-700 rounded p-3 cursor-pointer hover:bg-gray-650 transition-colors group ${isSelected ? 'ring-2 ring-blue-500' : ''}">
                                         <div class="flex items-start gap-2">
-                                            <button onclick="toggleComplete('${group.id}', '${item.id}')" 
+                                            <button onclick="event.stopPropagation(); toggleComplete('${group.id}', '${item.id}')" 
                                                     class="flex-shrink-0 w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center transition-colors ${item.completed ? 'bg-green-500 border-green-500' : 'border-gray-500 hover:border-gray-400'}">
                                                 ${item.completed ? '<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
                                             </button>
                                             <div class="flex-1">
-                                                ${isEditingThisTask ? `
-                                                    <div onmousedown="event.stopPropagation();" onclick="event.stopPropagation();">
-                                                        <input id="task-content-input-${item.id}" type="text" value="${item.content}" 
-                                                               oninput="event.stopPropagation();"
-                                                               onkeypress="if(event.key==='Enter') { const memoInput = document.getElementById('task-memo-${item.id}'); if(memoInput) { memoInput.focus(); } else { saveTaskContent('${group.id}', '${item.id}', this.value); } event.preventDefault(); }"
-                                                               class="w-full px-2 py-1 bg-gray-600 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"/>
-                                                        <textarea id="task-memo-${item.id}"
-                                                               oninput="saveTaskMemo('${group.id}', '${item.id}', this.value); event.stopPropagation();"
-                                                               onblur="setTimeout(() => { if(state.editingTaskId === '${item.id}') { const input = document.getElementById('task-content-input-${item.id}'); saveTaskContent('${group.id}', '${item.id}', input.value); } }, 200);"
-                                                               placeholder="メモを入力..."
-                                                               class="w-full px-2 py-1 bg-gray-600 text-white text-xs rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                                                               rows="2">${item.memo || ''}</textarea>
-                                                    </div>
-                                                ` : `
-                                                    <p class="text-white text-sm ${item.completed ? 'line-through opacity-60' : ''} cursor-pointer hover:text-blue-300" onclick="startEditTask('${group.id}', '${item.id}')">${item.content}</p>
-                                                    ${item.memo ? `<p class="text-gray-400 text-xs mt-1">${item.memo}</p>` : ''}
-                                                `}
+                                                <p class="text-white text-sm ${item.completed ? 'line-through opacity-60' : ''}">${item.content}</p>
+                                                ${item.memo ? `<p class="text-gray-400 text-xs mt-1 line-clamp-2">${item.memo}</p>` : ''}
                                             </div>
-                                            <button onclick="deleteTask('${group.id}', '${item.id}')" 
+                                            <button onclick="event.stopPropagation(); deleteTask('${group.id}', '${item.id}')" 
                                                     class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-600 rounded flex-shrink-0">
                                                 <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                             </button>
@@ -688,9 +679,13 @@
             };
         
             // メインレイアウト
+            const selectedTask = state.selectedTaskId && state.selectedTaskGroupId 
+                ? state.groups.find(g => g.id === state.selectedTaskGroupId)?.items.find(i => i.id === state.selectedTaskId)
+                : null;
+            
             document.getElementById('app').innerHTML = `
-                <div class="min-h-screen p-4 pt-2">
-                    <div class="space-y-4">
+                <div class="min-h-screen p-4 pt-2 flex gap-4">
+                    <div class="space-y-4 ${selectedTask ? 'flex-1' : 'w-full'}">
                         <!-- 1行目 -->
                         <div class="flex gap-4 overflow-x-auto pb-4">
                             ${row0Groups.map((group, index) => renderGroup(group, index, 0)).join('')}
