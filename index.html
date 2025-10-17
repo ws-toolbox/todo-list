@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '2025/01/18 12:10'
+            APP_VERSION: '2025/01/18 12:15'
         };
 
         let gapiInited = false;
@@ -390,16 +390,13 @@
             render();
         }
         
-        // タスク削除（ゴミ箱へ移動）
+        // タスク削除（完全削除）
         async function deleteTask(groupId, taskId) {
-            const task = state.groups.find(g => g.id === groupId)?.items.find(i => i.id === taskId);
-            if (!task) return;
+            if (!confirm('このタスクを削除しますか？')) return;
+            
             state.groups = state.groups.map(group => {
                 if (group.id === groupId) {
                     return { ...group, items: group.items.filter(item => item.id !== taskId) };
-                }
-                if (group.id === 'trash') {
-                    return { ...group, items: [...group.items, task] };
                 }
                 return group;
             });
@@ -450,8 +447,7 @@
         
         // グループ削除
         async function deleteGroup(groupId) {
-            if (groupId === 'trash') return;
-            if (confirm('このグループを削除しますか？')) {
+            if (confirm('このグループを削除しますか？\n中のタスクもすべて削除されます。')) {
                 state.groups = state.groups.filter(group => group.id !== groupId);
                 await saveToDrive();
                 render();
@@ -504,14 +500,14 @@
             const renderGroup = (group, index, row) => {
                 const isEditing = state.editingGroupId === group.id;
                 return `
-                    <div class="flex-shrink-0 w-80" draggable="${group.id !== 'trash'}" 
+                    <div class="flex-shrink-0 w-80" draggable="true" 
                          onDragStart="handleGroupDragStart(event, '${group.id}')" 
-                         onDragOver="handleDragOver(event)" 
+                         onDragOver="handleDragOver(event)"
                          onDrop="handleGroupDrop(event, ${row}, ${index})">
-                        <div class="${group.color} rounded-t-lg p-3 ${group.id !== 'trash' ? 'cursor-move' : ''}">
+                        <div class="${group.color} rounded-t-lg p-3 cursor-move">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-2 flex-1">
-                                    ${group.id !== 'trash' ? '<svg class="w-4 h-4 text-white opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>' : ''}
+                                    <svg class="w-4 h-4 text-white opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
                                     ${isEditing ? `
                                         <input id="group-name-input-${group.id}" type="text" value="${state.editingGroupName}" 
                                                oninput="state.editingGroupName = this.value" 
@@ -533,14 +529,12 @@
                                             <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                         </button>
                                     ` : `
-                                        ${group.id !== 'trash' ? `
-                                            <button onclick="state.newTaskGroup = '${group.id}'; render();" class="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
-                                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                                            </button>
-                                            <button onclick="deleteGroup('${group.id}')" class="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
-                                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                            </button>
-                                        ` : ''}
+                                        <button onclick="state.newTaskGroup = '${group.id}'; render();" class="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
+                                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                        </button>
+                                        <button onclick="deleteGroup('${group.id}')" class="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
+                                            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                        </button>
                                     `}
                                 </div>
                             </div>
@@ -570,18 +564,16 @@
                                             <div class="flex-1">
                                                 <p class="text-white text-sm ${item.completed ? 'line-through opacity-60' : ''}">${item.content}</p>
                                             </div>
-                                            ${group.id !== 'trash' ? `
-                                                <button onclick="deleteTask('${group.id}', '${item.id}')" 
-                                                        class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-600 rounded flex-shrink-0">
-                                                    <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                                </button>
-                                            ` : ''}
+                                            <button onclick="deleteTask('${group.id}', '${item.id}')" 
+                                                    class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-600 rounded flex-shrink-0">
+                                                <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                            </button>
                                         </div>
                                     </div>
                                 `).join('')}
                             </div>
                             
-                            ${state.newTaskGroup !== group.id && group.id !== 'trash' ? `
+                            ${state.newTaskGroup !== group.id ? `
                                 <button onclick="state.newTaskGroup = '${group.id}'; render();" 
                                         class="w-full mt-2 p-2 text-left text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">
                                     + アイテムを追加する
