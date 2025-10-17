@@ -416,6 +416,11 @@
             // 完了状態をトグル
             const updatedItem = { ...item, completed: !item.completed };
             
+            // 完了する場合は元のグループIDを保存
+            if (updatedItem.completed && !updatedItem.originalGroupId) {
+                updatedItem.originalGroupId = groupId;
+            }
+            
             // 元のグループから削除
             state.groups = state.groups.map(group => {
                 if (group.id === groupId) {
@@ -425,7 +430,14 @@
             });
             
             // 完了状態に応じて適切なグループに追加
-            const targetGroupId = updatedItem.completed ? 'group3' : groupId; // group3が「完了」グループ
+            let targetGroupId;
+            if (updatedItem.completed) {
+                targetGroupId = 'group3'; // 完了グループへ
+            } else {
+                targetGroupId = updatedItem.originalGroupId || 'group1'; // 元のグループまたはTodoへ
+                delete updatedItem.originalGroupId; // 完了解除時は元グループIDを削除
+            }
+            
             state.groups = state.groups.map(group => {
                 if (group.id === targetGroupId) {
                     return { ...group, items: [...group.items, updatedItem] };
