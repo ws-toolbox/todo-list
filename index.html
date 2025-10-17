@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '2025/01/18 12:05'
+            APP_VERSION: '2025/01/18 12:10'
         };
 
         let gapiInited = false;
@@ -515,8 +515,9 @@
                                     ${group.id !== 'trash' ? '<svg class="w-4 h-4 text-white opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>' : ''}
                                     ${isEditing ? `
                                         <input id="group-name-input-${group.id}" type="text" value="${state.editingGroupName}" 
-                                               onchange="state.editingGroupName = this.value" 
-                                               onkeypress="if(event.key==='Enter') saveGroupName('${group.id}')" 
+                                               oninput="state.editingGroupName = this.value" 
+                                               onkeypress="if(event.key==='Enter') { saveGroupName('${group.id}'); event.target.blur(); }"
+                                               onblur="if(state.editingGroupId === '${group.id}') saveGroupName('${group.id}')" 
                                                class="flex-1 px-2 py-1 bg-white text-gray-800 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
                                     ` : `
                                         <h2 class="text-white font-semibold cursor-pointer hover:underline" onclick="startEditGroupName('${group.id}')">
