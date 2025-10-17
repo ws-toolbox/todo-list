@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '250118-1300'
+            APP_VERSION: '250118-1305'
         };
 
         let gapiInited = false;
@@ -692,7 +692,7 @@
                 <div class="min-h-screen p-4">
                     <div class="space-y-4">
                         <!-- 1行目 -->
-                        <div class="flex gap-4 overflow-x-auto pb-4">
+                        <div class="flex gap-4 overflow-x-auto pb-4 ${selectedTask ? 'pr-[25rem]' : ''}">
                             ${row0Groups.map((group, index) => renderGroup(group, index, 0)).join('')}
                         </div>
                         
