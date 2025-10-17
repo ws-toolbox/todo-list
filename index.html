@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '2025/01/18 12:00'
+            APP_VERSION: '2025/01/18 12:05'
         };
 
         let gapiInited = false;
@@ -661,16 +661,16 @@
                     </div>
                 </div>
             `;
-        }
-        
-        // タスク入力欄に自動フォーカス
-        if (state.newTaskGroup) {
-            setTimeout(() => {
-                const input = document.getElementById(`new-task-input-${state.newTaskGroup}`);
-                if (input) {
-                    input.focus();
-                }
-            }, 0);
+            
+            // タスク入力欄に自動フォーカス
+            if (state.newTaskGroup) {
+                setTimeout(() => {
+                    const input = document.getElementById(`new-task-input-${state.newTaskGroup}`);
+                    if (input) {
+                        input.focus();
+                    }
+                }, 0);
+            }
         }
 
     </script>
