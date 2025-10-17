@@ -541,8 +541,12 @@
             render();
         }
         
-        // タスクメモ保存
-        async function saveTaskMemo(groupId, taskId, newMemo) {
+        // メモ保存用のタイマー
+        let memoSaveTimer = null;
+        
+        // タスクメモ保存（遅延保存）
+        function saveTaskMemo(groupId, taskId, newMemo) {
+            // 即座にstateを更新
             state.groups = state.groups.map(group =>
                 group.id === groupId
                     ? {
@@ -553,7 +557,16 @@
                     }
                     : group
             );
-            await saveToDrive();
+            
+            // 既存のタイマーをクリア
+            if (memoSaveTimer) {
+                clearTimeout(memoSaveTimer);
+            }
+            
+            // 2秒後に保存
+            memoSaveTimer = setTimeout(async () => {
+                await saveToDrive();
+            }, 2000);
         }
         
         // タスク編集キャンセル
