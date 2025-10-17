@@ -545,7 +545,7 @@
                                     <input id="new-task-input-${group.id}" type="text" value="${state.newTaskContent}" 
                                            oninput="state.newTaskContent = this.value" 
                                            onkeypress="if(event.key==='Enter' && state.newTaskContent.trim()) addTask('${group.id}')"
-                                           onblur="state.newTaskGroup = null; state.newTaskContent = ''; render();"
+                                           onblur="if(state.newTaskContent.trim()) { addTask('${group.id}'); } else { state.newTaskGroup = null; state.newTaskContent = ''; render(); }"
                                            placeholder="アイテムを追加する" 
                                            class="w-full px-3 py-2 bg-gray-700 text-white text-sm border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"/>
                                 </div>
