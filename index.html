@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '2025/01/18 12:20'
+            APP_VERSION: '2025/01/18 12:25'
         };
 
         let gapiInited = false;
@@ -637,15 +637,17 @@
                                             </button>
                                             <div class="flex-1">
                                                 ${isEditingThisTask ? `
-                                                    <input id="task-content-input-${item.id}" type="text" value="${item.content}" 
-                                                           onkeypress="if(event.key==='Enter') { saveTaskContent('${group.id}', '${item.id}', this.value); event.target.blur(); }"
-                                                           onblur="if(state.editingTaskId === '${item.id}') saveTaskContent('${group.id}', '${item.id}', this.value)"
-                                                           class="w-full px-2 py-1 bg-gray-600 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"/>
-                                                    <textarea 
-                                                           onchange="saveTaskMemo('${group.id}', '${item.id}', this.value)"
-                                                           placeholder="メモを入力..."
-                                                           class="w-full px-2 py-1 bg-gray-600 text-white text-xs rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                                                           rows="2">${item.memo || ''}</textarea>
+                                                    <div onmousedown="event.stopPropagation();" onclick="event.stopPropagation();">
+                                                        <input id="task-content-input-${item.id}" type="text" value="${item.content}" 
+                                                               onkeypress="if(event.key==='Enter') { const memoInput = document.getElementById('task-memo-${item.id}'); if(memoInput) { memoInput.focus(); } else { saveTaskContent('${group.id}', '${item.id}', this.value); } event.preventDefault(); }"
+                                                               class="w-full px-2 py-1 bg-gray-600 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"/>
+                                                        <textarea id="task-memo-${item.id}"
+                                                               onchange="saveTaskMemo('${group.id}', '${item.id}', this.value)"
+                                                               onblur="setTimeout(() => { if(state.editingTaskId === '${item.id}') { const input = document.getElementById('task-content-input-${item.id}'); saveTaskContent('${group.id}', '${item.id}', input.value); } }, 100);"
+                                                               placeholder="メモを入力..."
+                                                               class="w-full px-2 py-1 bg-gray-600 text-white text-xs rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                                               rows="2">${item.memo || ''}</textarea>
+                                                    </div>
                                                 ` : `
                                                     <p class="text-white text-sm ${item.completed ? 'line-through opacity-60' : ''} cursor-pointer hover:text-blue-300" onclick="startEditTask('${group.id}', '${item.id}')">${item.content}</p>
                                                     ${item.memo ? `<p class="text-gray-400 text-xs mt-1">${item.memo}</p>` : ''}
