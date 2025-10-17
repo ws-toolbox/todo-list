@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '2025/01/18 12:30'
+            APP_VERSION: '2025/01/18 12:35'
         };
 
         let gapiInited = false;
@@ -652,11 +652,12 @@
                                                 ${isEditingThisTask ? `
                                                     <div onmousedown="event.stopPropagation();" onclick="event.stopPropagation();">
                                                         <input id="task-content-input-${item.id}" type="text" value="${item.content}" 
+                                                               oninput="event.stopPropagation();"
                                                                onkeypress="if(event.key==='Enter') { const memoInput = document.getElementById('task-memo-${item.id}'); if(memoInput) { memoInput.focus(); } else { saveTaskContent('${group.id}', '${item.id}', this.value); } event.preventDefault(); }"
                                                                class="w-full px-2 py-1 bg-gray-600 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"/>
                                                         <textarea id="task-memo-${item.id}"
-                                                               onchange="saveTaskMemo('${group.id}', '${item.id}', this.value)"
-                                                               onblur="setTimeout(() => { if(state.editingTaskId === '${item.id}') { const input = document.getElementById('task-content-input-${item.id}'); saveTaskContent('${group.id}', '${item.id}', input.value); } }, 100);"
+                                                               oninput="saveTaskMemo('${group.id}', '${item.id}', this.value); event.stopPropagation();"
+                                                               onblur="setTimeout(() => { if(state.editingTaskId === '${item.id}') { const input = document.getElementById('task-content-input-${item.id}'); saveTaskContent('${group.id}', '${item.id}', input.value); } }, 200);"
                                                                placeholder="メモを入力..."
                                                                class="w-full px-2 py-1 bg-gray-600 text-white text-xs rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                                                                rows="2">${item.memo || ''}</textarea>
