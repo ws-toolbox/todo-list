@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '250118-1255'
+            APP_VERSION: '250118-1300'
         };
 
         let gapiInited = false;
@@ -731,10 +731,6 @@
                             `}
                         </div>
                         
-                        <!-- 2行目 -->
-                        <div class="flex gap-4 overflow-x-auto pb-4">
-                            ${row1Groups.map((group, index) => renderGroup(group, index, 1)).join('')}
-                        </div>
                     </div>
                     
                     ${selectedTask ? `
