@@ -316,24 +316,35 @@
         }
         
         // ドロップ: タスク
-        async function handleTaskDrop(e, targetGroupId) {
+        async function handleTaskDrop(e, targetGroupId, targetIndex = null) {
             e.preventDefault();
             e.stopPropagation();
             if (!state.draggedItem || !state.draggedFrom) return;
-            if (state.draggedFrom === targetGroupId) {
-                state.draggedItem = null;
-                state.draggedFrom = null;
-                return;
-            }
+            
+            // 元のグループから削除
             state.groups = state.groups.map(group => {
                 if (group.id === state.draggedFrom) {
                     return { ...group, items: group.items.filter(item => item.id !== state.draggedItem.id) };
                 }
+                return group;
+            });
+            
+            // ターゲットグループに追加
+            state.groups = state.groups.map(group => {
                 if (group.id === targetGroupId) {
-                    return { ...group, items: [...group.items, state.draggedItem] };
+                    const newItems = [...group.items];
+                    if (targetIndex !== null && targetIndex >= 0) {
+                        // 特定の位置に挿入
+                        newItems.splice(targetIndex, 0, state.draggedItem);
+                    } else {
+                        // 末尾に追加
+                        newItems.push(state.draggedItem);
+                    }
+                    return { ...group, items: newItems };
                 }
                 return group;
             });
+            
             state.draggedItem = null;
             state.draggedFrom = null;
             await saveToDrive();
@@ -552,9 +563,11 @@
                             ` : ''}
                             
                             <div class="space-y-2">
-                                ${group.items.map(item => `
+                                ${group.items.map((item, itemIndex) => `
                                     <div draggable="true" 
                                          onDragStart="handleTaskDragStart(event, ${JSON.stringify(item).replace(/"/g, '&quot;')}, '${group.id}')" 
+                                         onDragOver="handleDragOver(event)"
+                                         onDrop="handleTaskDrop(event, '${group.id}', ${itemIndex})"
                                          class="bg-gray-700 rounded p-3 cursor-move hover:bg-gray-650 transition-colors group">
                                         <div class="flex items-start gap-2">
                                             <button onclick="toggleComplete('${group.id}', '${item.id}')" 
