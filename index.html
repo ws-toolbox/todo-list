@@ -410,16 +410,29 @@
         
         // タスク完了トグル
         async function toggleComplete(groupId, taskId) {
-            state.groups = state.groups.map(group => 
-                group.id === groupId
-                    ? { 
-                        ...group, 
-                        items: group.items.map(item => 
-                            item.id === taskId ? { ...item, completed: !item.completed } : item
-                        ) 
-                    }
-                    : group
-            );
+            const item = state.groups.find(g => g.id === groupId)?.items.find(i => i.id === taskId);
+            if (!item) return;
+            
+            // 完了状態をトグル
+            const updatedItem = { ...item, completed: !item.completed };
+            
+            // 元のグループから削除
+            state.groups = state.groups.map(group => {
+                if (group.id === groupId) {
+                    return { ...group, items: group.items.filter(i => i.id !== taskId) };
+                }
+                return group;
+            });
+            
+            // 完了状態に応じて適切なグループに追加
+            const targetGroupId = updatedItem.completed ? 'group3' : groupId; // group3が「完了」グループ
+            state.groups = state.groups.map(group => {
+                if (group.id === targetGroupId) {
+                    return { ...group, items: [...group.items, updatedItem] };
+                }
+                return group;
+            });
+            
             await saveToDrive();
             render();
         }
@@ -520,19 +533,15 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="bg-gray-800 rounded-b-lg p-3 min-h-[400px]" onDragOver="handleDragOver(event)" onDrop="handleTaskDrop(event, '${group.id}')">
+                        <div class="bg-gray-800 rounded-b-lg p-3 min-h-[200px] max-h-[calc(100vh-300px)] overflow-y-auto" onDragOver="handleDragOver(event)" onDrop="handleTaskDrop(event, '${group.id}')">
                             ${state.newTaskGroup === group.id ? `
-                                <div class="mb-3 p-2 bg-gray-700 rounded">
-                                    <input type="text" value="${state.newTaskContent}" 
-                                           onchange="state.newTaskContent = this.value" 
-                                           onkeypress="if(event.key==='Enter') addTask('${group.id}')" 
+                                <div class="mb-3">
+                                    <input id="new-task-input-${group.id}" type="text" value="${state.newTaskContent}" 
+                                           oninput="state.newTaskContent = this.value" 
+                                           onkeypress="if(event.key==='Enter' && state.newTaskContent.trim()) addTask('${group.id}')"
+                                           onblur="state.newTaskGroup = null; state.newTaskContent = ''; render();"
                                            placeholder="アイテムを追加する" 
-                                           class="w-full px-2 py-1 bg-gray-600 text-white text-sm border-none rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
-                                           autofocus/>
-                                    <div class="flex gap-2 mt-2">
-                                        <button onclick="addTask('${group.id}')" class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs">追加</button>
-                                        <button onclick="state.newTaskGroup = null; state.newTaskContent = ''; render();" class="px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-500 transition-colors text-xs">×</button>
-                                    </div>
+                                           class="w-full px-3 py-2 bg-gray-700 text-white text-sm border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"/>
                                 </div>
                             ` : ''}
                             
@@ -652,6 +661,16 @@
                     </div>
                 </div>
             `;
+        }
+        
+        // タスク入力欄に自動フォーカス
+        if (state.newTaskGroup) {
+            setTimeout(() => {
+                const input = document.getElementById(`new-task-input-${state.newTaskGroup}`);
+                if (input) {
+                    input.focus();
+                }
+            }, 0);
         }
 
     </script>
