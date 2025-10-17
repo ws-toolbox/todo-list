@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '250118-1250'
+            APP_VERSION: '250118-1255'
         };
 
         let gapiInited = false;
@@ -588,10 +588,15 @@
             const renderGroup = (group, index, row) => {
                 const isEditing = state.editingGroupId === group.id;
                 return `
-                    <div class="flex-shrink-0 w-80" draggable="true" 
+                    <div class="flex-shrink-0 w-80 relative" draggable="true" 
                          onDragStart="handleGroupDragStart(event, '${group.id}')" 
-                         onDragOver="handleDragOver(event)"
-                         onDrop="handleGroupDrop(event, ${row}, ${index})">
+                         onDragOver="handleDragOver(event)">
+                        <div class="absolute inset-y-0 left-0 w-10 z-10" 
+                             onDragOver="handleDragOver(event)"
+                             onDrop="handleGroupDrop(event, ${row}, ${index})"></div>
+                        <div class="absolute inset-y-0 right-0 w-10 z-10" 
+                             onDragOver="handleDragOver(event)"
+                             onDrop="handleGroupDrop(event, ${row}, ${index + 1})"></div>
                         <div class="${group.color} rounded-t-lg p-3 cursor-move">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-2 flex-1">
@@ -684,8 +689,8 @@
                 : null;
             
             document.getElementById('app').innerHTML = `
-                <div class="min-h-screen p-4 pt-2 flex gap-4">
-                    <div class="space-y-4 ${selectedTask ? 'flex-1' : 'w-full'}">
+                <div class="min-h-screen p-4">
+                    <div class="space-y-4">
                         <!-- 1行目 -->
                         <div class="flex gap-4 overflow-x-auto pb-4">
                             ${row0Groups.map((group, index) => renderGroup(group, index, 0)).join('')}
@@ -734,8 +739,8 @@
                     
                     ${selectedTask ? `
                     <!-- 右側編集パネル -->
-                    <div class="w-96 flex-shrink-0">
-                        <div class="bg-gray-800 rounded-lg p-4 sticky top-2 border border-gray-700 h-[calc(50vh-1rem)]">
+                    <div class="fixed top-4 right-4 w-96 z-50">
+                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-2xl h-[calc(50vh-2rem)]">
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="text-white font-semibold">タスク編集</h3>
                                 <button onclick="deselectTask()" class="text-gray-400 hover:text-white transition-colors">
