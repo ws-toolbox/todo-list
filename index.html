@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カンバンボード Todo リスト - Part 1/4</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js"></script>
+</head>
+<body class="bg-gray-900">
+    <div id="app"></div>
+    
+    <script>
+        // ========== Part 1: 設定と状態管理 ==========
+        const CONFIG = {
+            CLIENT_ID: '417822818519-8imosvo7c9e2gem7cp0rse0vm8vrjlou.apps.googleusercontent.com',
+            SCOPES: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
+            PARENT_FOLDER_NAME: '10_WSB-APP',
+            TODO_FOLDER_NAME: 'ToDoリスト',
+            JSON_FILE_NAME: 'kanban_data.json',
+            SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
+            APP_VERSION: '2025/01/18 12:00'
+        };
+
+        let gapiInited = false;
+        let gisInited = false;
+        let tokenClient;
+        let accessToken = null;
+        let fileId = null;
+
+        let state = {
+            groups: [
+                { id: 'group1', title: 'Todo', color: 'bg-gray-700', row: 0, items: [
+                    { id: '1', content: '新しいプロジェクトの企画書を作成', completed: false }
+                ]},
+                { id: 'group2', title: '進行中', color: 'bg-green-800', row: 0, items: [] },
+                { id: 'group3', title: '完了', color: 'bg-purple-800', row: 0, items: [] },
+                { id: 'trash', title: 'ゴミ箱', color: 'bg-red-900', row: 1, items: [] }
+            ],
+            draggedItem: null,
+            draggedFrom: null,
+            draggedGroup: null,
+            newTaskGroup: null,
+            newTaskContent: '',
+            newGroupName: '',
+            isAddingGroup: false,
+            editingGroupId: null,
+            editingGroupName: '',
+            isSignedIn: false,
+            isSaving: false,
+            folderId: null,
+            lastUpdated: null
+        };
+
+        // ========== Google API初期化 ==========
+        function gapiLoaded() {
+            gapi.load('client', async () => {
+                await gapi.client.init({
+                    discoveryDocs: [
+                        'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
+                        'https://sheets.googleapis.com/$discovery/rest?version=v4'
+                    ]
+                });
+                gapiInited = true;
+                maybeEnableButtons();
+            });
+        }
+
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CONFIG.CLIENT_ID,
+                scope: CONFIG.SCOPES,
+                callback: ''
+            });
+            gisInited = true;
+            maybeEnableButtons();
+        }
+
+        function maybeEnableButtons() {
+            if (gapiInited && gisInited) tryAutoSignIn();
+        }
+
+        // ========== 認証関連 ==========
+        function handleAuthClick() {
+            tokenClient.callback = async (resp) => {
+                if (resp.error !== undefined) throw (resp);
+                accessToken = gapi.client.getToken().access_token;
+                state.isSignedIn = true;
+                localStorage.setItem('google_access_token', JSON.stringify(gapi.client.getToken()));
+                await loadFromDrive();
+                render();
+            };
+            if (gapi.client.getToken() === null) {
+                tokenClient.requestAccessToken({prompt: 'consent'});
+            } else {
+                tokenClient.requestAccessToken({prompt: ''});
+            }
+        }
+
+        async function tryAutoSignIn() {
+            const savedToken = localStorage.getItem('google_access_token');
+            if (savedToken) {
+                try {
+                    const token = JSON.parse(savedToken);
+                    gapi.client.setToken(token);
+                    accessToken = token.access_token;
+                    await gapi.client.drive.files.list({ pageSize: 1 });
+                    state.isSignedIn = true;
+                    await loadFromDrive();
+                } catch (error) {
+                    localStorage.removeItem('google_access_token');
+                }
+            }
+            render();
+        }
+
+        function handleSignOut() {
+            gapi.client.setToken(null);
+            localStorage.removeItem('google_access_token');
+            accessToken = null;
+            state.isSignedIn = false;
+            state.folderId = null;
+            fileId = null;
+            render();
+            showMessage('ログアウトしました', 'success');
+        }
+
+        function showMessage(message, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white z-50 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
+            messageDiv.textContent = message;
+            document.body.appendChild(messageDiv);
+            setTimeout(() => messageDiv.remove(), 3000);
+        }
+
+        function formatDateTime(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+        }
+
+        window.addEventListener('load', () => {
+            gapiLoaded();
+            gisLoaded();
+        });
+
+        // Google Drive接続
+        async function loadFromDrive() {
+            try {
+                let parentFolderId = await findOrCreateFolder(CONFIG.PARENT_FOLDER_NAME, 'root');
+                let todoFolderId = await findOrCreateFolder(CONFIG.TODO_FOLDER_NAME, parentFolderId);
+                state.folderId = todoFolderId;
+                await loadJsonData();
+                showMessage('Google Driveに接続しました', 'success');
+            } catch (error) {
+                showMessage('エラー: ' + (error.result?.error?.message || error.message), 'error');
+            }
+        }
+        
+        // フォルダ検索または作成
+        async function findOrCreateFolder(folderName, parentId) {
+            const response = await gapi.client.drive.files.list({
+                q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`,
+                fields: 'files(id, name)',
+                spaces: 'drive'
+            });
+            if (response.result.files && response.result.files.length > 0) {
+                return response.result.files[0].id;
+            }
+            const createResponse = await gapi.client.drive.files.create({
+                resource: {
+                    name: folderName,
+                    mimeType: 'application/vnd.google-apps.folder',
+                    parents: [parentId]
+                },
+                fields: 'id'
+            });
+            return createResponse.result.id;
+        }
+        
+        // JSONデータ読み込み
+        async function loadJsonData() {
+            if (!state.folderId) return;
+            try {
+                const response = await gapi.client.drive.files.list({
+                    q: `name='${CONFIG.JSON_FILE_NAME}' and '${state.folderId}' in parents and trashed=false`,
+                    fields: 'files(id, name)',
+                    spaces: 'drive'
+                });
+                const files = response.result.files;
+                if (files && files.length > 0) {
+                    fileId = files[0].id;
+                    const fileContent = await gapi.client.drive.files.get({
+                        fileId: fileId,
+                        alt: 'media'
+                    });
+                    if (fileContent.body) {
+                        const data = JSON.parse(fileContent.body);
+                        state.groups = data.groups || state.groups;
+                        state.lastUpdated = data.lastUpdated || null;
+                    }
+                } else {
+                    fileId = null;
+                }
+            } catch (error) {
+                fileId = null;
+            }
+        }
+        
+        // Google Driveに保存
+        async function saveToDrive() {
+            if (!state.isSignedIn || !state.folderId || state.isSaving) return;
+            state.isSaving = true;
+            render();
+            try {
+                const now = new Date().toISOString();
+                const content = JSON.stringify({ groups: state.groups, lastUpdated: now });
+                const file = new Blob([content], { type: 'application/json' });
+                const metadata = {
+                    name: CONFIG.JSON_FILE_NAME,
+                    mimeType: 'application/json',
+                    ...(fileId ? {} : { parents: [state.folderId] })
+                };
+                const form = new FormData();
+                form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+                form.append('file', file);
+                const url = fileId
+                    ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+                    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+                const response = await fetch(url, {
+                    method: fileId ? 'PATCH' : 'POST',
+                    headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+                    body: form
+                });
+                if (!response.ok) throw new Error(`保存に失敗: ${response.status}`);
+                const result = await response.json();
+                if (!fileId) fileId = result.id;
+                state.lastUpdated = now;
+                showMessage('保存しました！', 'success');
+            } catch (error) {
+                showMessage('保存に失敗: ' + error.message, 'error');
+            } finally {
+                state.isSaving = false;
+                render();
+            }
+        }
+        
+        // スプレッドシート同期
+        async function exportToSpreadsheet() {
+            if (!state.isSignedIn) {
+                showMessage('先にGoogle Driveに接続してください', 'error');
+                return;
+            }
+            try {
+                showMessage('スプレッドシートに書き込み中...', 'success');
+                const headers = [['グループ名', '行', 'タスク内容', '完了状態', '最終更新日時']];
+                const rows = [];
+                state.groups.forEach(group => {
+                    group.items.forEach(item => {
+                        rows.push([
+                            group.title,
+                            `${group.row + 1}行目`,
+                            item.content,
+                            item.completed ? '✓' : '',
+                            new Date().toLocaleString('ja-JP')
+                        ]);
+                    });
+                });
+                await gapi.client.sheets.spreadsheets.values.clear({
+                    spreadsheetId: CONFIG.SPREADSHEET_ID,
+                    range: 'シート1!A1:Z'
+                });
+                await gapi.client.sheets.spreadsheets.values.update({
+                    spreadsheetId: CONFIG.SPREADSHEET_ID,
+                    range: 'シート1!A1',
+                    valueInputOption: 'RAW',
+                    resource: { values: [...headers, ...rows] }
+                });
+                await gapi.client.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: CONFIG.SPREADSHEET_ID,
+                    resource: {
+                        requests: [{
+                            repeatCell: {
+                                range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1 },
+                                cell: { userEnteredFormat: { textFormat: { bold: true }}},
+                                fields: 'userEnteredFormat.textFormat.bold'
+                            }
+                        }]
+                    }
+                });
+                window.open(`https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}`, '_blank');
+                showMessage('スプレッドシートに書き込みました！', 'success');
+            } catch (error) {
+                showMessage('スプレッドシート書き込み失敗: ' + (error.result?.error?.message || error.message), 'error');
+            }
+        }
+
+        // ドラッグ&ドロップ: タスク開始
+        function handleTaskDragStart(e, item, groupId) {
+            state.draggedItem = item;
+            state.draggedFrom = groupId;
+            e.dataTransfer.effectAllowed = 'move';
+            e.stopPropagation();
+        }
+        
+        // ドラッグ&ドロップ: グループ開始
+        function handleGroupDragStart(e, groupId) {
+            state.draggedGroup = groupId;
+            e.dataTransfer.effectAllowed = 'move';
+        }
+        
+        // ドラッグオーバー
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+        
+        // ドロップ: タスク
+        async function handleTaskDrop(e, targetGroupId) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!state.draggedItem || !state.draggedFrom) return;
+            if (state.draggedFrom === targetGroupId) {
+                state.draggedItem = null;
+                state.draggedFrom = null;
+                return;
+            }
+            state.groups = state.groups.map(group => {
+                if (group.id === state.draggedFrom) {
+                    return { ...group, items: group.items.filter(item => item.id !== state.draggedItem.id) };
+                }
+                if (group.id === targetGroupId) {
+                    return { ...group, items: [...group.items, state.draggedItem] };
+                }
+                return group;
+            });
+            state.draggedItem = null;
+            state.draggedFrom = null;
+            await saveToDrive();
+            render();
+        }
+        
+        // ドロップ: グループ
+        async function handleGroupDrop(e, targetRow, targetIndex) {
+            e.preventDefault();
+            if (!state.draggedGroup) return;
+            const draggedGroupData = state.groups.find(g => g.id === state.draggedGroup);
+            const otherGroups = state.groups.filter(g => g.id !== state.draggedGroup);
+            const targetRowGroups = otherGroups.filter(g => g.row === targetRow);
+            targetRowGroups.splice(targetIndex, 0, { ...draggedGroupData, row: targetRow });
+            const otherRowGroups = otherGroups.filter(g => g.row !== targetRow);
+            state.groups = [...otherRowGroups, ...targetRowGroups];
+            state.draggedGroup = null;
+            await saveToDrive();
+            render();
+        }
+        
+        // タスク追加
+        async function addTask(groupId) {
+            if (!state.newTaskContent.trim()) return;
+            const newTask = { 
+                id: Date.now().toString(), 
+                content: state.newTaskContent, 
+                completed: false 
+            };
+            state.groups = state.groups.map(group => 
+                group.id === groupId ? { ...group, items: [...group.items, newTask] } : group
+            );
+            state.newTaskContent = '';
+            state.newTaskGroup = null;
+            await saveToDrive();
+            render();
+        }
+        
+        // グループ追加
+        async function addGroup() {
+            if (!state.newGroupName.trim()) return;
+            const colors = ['bg-blue-800', 'bg-red-800', 'bg-indigo-800', 'bg-pink-800', 'bg-teal-800'];
+            const newGroup = {
+                id: Date.now().toString(),
+                title: state.newGroupName,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                row: 0,
+                items: []
+            };
+            state.groups = [...state.groups, newGroup];
+            state.newGroupName = '';
+            state.isAddingGroup = false;
+            await saveToDrive();
+            render();
+        }
+        
+        // タスク削除（ゴミ箱へ移動）
+        async function deleteTask(groupId, taskId) {
+            const task = state.groups.find(g => g.id === groupId)?.items.find(i => i.id === taskId);
+            if (!task) return;
+            state.groups = state.groups.map(group => {
+                if (group.id === groupId) {
+                    return { ...group, items: group.items.filter(item => item.id !== taskId) };
+                }
+                if (group.id === 'trash') {
+                    return { ...group, items: [...group.items, task] };
+                }
+                return group;
+            });
+            await saveToDrive();
+            render();
+        }
+        
+        // タスク完了トグル
+        async function toggleComplete(groupId, taskId) {
+            state.groups = state.groups.map(group => 
+                group.id === groupId
+                    ? { 
+                        ...group, 
+                        items: group.items.map(item => 
+                            item.id === taskId ? { ...item, completed: !item.completed } : item
+                        ) 
+                    }
+                    : group
+            );
+            await saveToDrive();
+            render();
+        }
+        
+        // グループ削除
+        async function deleteGroup(groupId) {
+            if (groupId === 'trash') return;
+            if (confirm('このグループを削除しますか？')) {
+                state.groups = state.groups.filter(group => group.id !== groupId);
+                await saveToDrive();
+                render();
+            }
+        }
+        
+        // グループ名編集開始
+        function startEditGroupName(groupId) {
+            const group = state.groups.find(g => g.id === groupId);
+            if (group) {
+                state.editingGroupId = groupId;
+                state.editingGroupName = group.title;
+                render();
+                setTimeout(() => {
+                    const input = document.getElementById(`group-name-input-${groupId}`);
+                    if (input) { 
+                        input.focus(); 
+                        input.select(); 
+                    }
+                }, 0);
+            }
+        }
+        
+        // グループ名保存
+        async function saveGroupName(groupId) {
+            if (!state.editingGroupName.trim()) {
+                cancelEditGroupName();
+                return;
+            }
+            state.groups = state.groups.map(group =>
+                group.id === groupId ? { ...group, title: state.editingGroupName } : group
+            );
+            state.editingGroupId = null;
+            state.editingGroupName = '';
+            await saveToDrive();
+            render();
+        }
+        
+        // グループ名編集キャンセル
+        function cancelEditGroupName() {
+            state.editingGroupId = null;
+            state.editingGroupName = '';
+            render();
+        }
+
+        function render() {
+            const row0Groups = state.groups.filter(g => g.row === 0);
+            const row1Groups = state.groups.filter(g => g.row === 1);
+        
+            const renderGroup = (group, index, row) => {
+                const isEditing = state.editingGroupId === group.id;
+                return `
+                    <div class="flex-shrink-0 w-80" draggable="${group.id !== 'trash'}" 
+                         onDragStart="handleGroupDragStart(event, '${group.id}')" 
+                         onDragOver="handleDragOver(event)" 
+                         onDrop="handleGroupDrop(event, ${row}, ${index})">
+                        <div class="${group.color} rounded-t-lg p-3 ${group.id !== 'trash' ? 'cursor-move' : ''}">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2 flex-1">
+                                    ${group.id !== 'trash' ? '<svg class="w-4 h-4 text-white opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>' : ''}
+                                    ${isEditing ? `
+                                        <input id="group-name-input-${group.id}" type="text" value="${state.editingGroupName}" 
+                                               onchange="state.editingGroupName = this.value" 
+                                               onkeypress="if(event.key==='Enter') saveGroupName('${group.id}')" 
+                                               class="flex-1 px-2 py-1 bg-white text-gray-800 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+                                    ` : `
+                                        <h2 class="text-white font-semibold cursor-pointer hover:underline" onclick="startEditGroupName('${group.id}')">
+                                            ${group.title} <span class="ml-2 text-sm opacity-80">(${group.items.length})</span>
+                                        </h2>
+                                    `}
+                                </div>
+                                <div class="flex gap-1">
+                                    ${isEditing ? `
+                                        <button onclick="saveGroupName('${group.id}')" class="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
+                                            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                        </button>
+                                        <button onclick="cancelEditGroupName()" class="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
+                                            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                        </button>
+                                    ` : `
+                                        ${group.id !== 'trash' ? `
+                                            <button onclick="state.newTaskGroup = '${group.id}'; render();" class="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
+                                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                            </button>
+                                            <button onclick="deleteGroup('${group.id}')" class="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
+                                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                            </button>
+                                        ` : ''}
+                                    `}
+                                </div>
+                            </div>
+                        </div>
+        
+                    `;
+        
+                        // タスクリスト表示エリア
+                        `<div class="bg-gray-800 rounded-b-lg p-3 min-h-[400px]" onDragOver="handleDragOver(event)" onDrop="handleTaskDrop(event, '${group.id}')">
+                            ${state.newTaskGroup === group.id ? `
+                                <div class="mb-3 p-2 bg-gray-700 rounded">
+                                    <input type="text" value="${state.newTaskContent}" 
+                                           onchange="state.newTaskContent = this.value" 
+                                           onkeypress="if(event.key==='Enter') addTask('${group.id}')" 
+                                           placeholder="アイテムを追加する" 
+                                           class="w-full px-2 py-1 bg-gray-600 text-white text-sm border-none rounded focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                                           autofocus/>
+                                    <div class="flex gap-2 mt-2">
+                                        <button onclick="addTask('${group.id}')" class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs">追加</button>
+                                        <button onclick="state.newTaskGroup = null; state.newTaskContent = ''; render();" class="px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-500 transition-colors text-xs">×</button>
+                                    </div>
+                                </div>
+                            ` : ''}
+                            
+                            <div class="space-y-2">
+                                ${group.items.map(item => `
+                                    <div draggable="true" 
+                                         onDragStart="handleTaskDragStart(event, ${JSON.stringify(item).replace(/"/g, '&quot;')}, '${group.id}')" 
+                                         class="bg-gray-700 rounded p-3 cursor-move hover:bg-gray-650 transition-colors group">
+                                        <div class="flex items-start gap-2">
+                                            <button onclick="toggleComplete('${group.id}', '${item.id}')" 
+                                                    class="flex-shrink-0 w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center transition-colors ${item.completed ? 'bg-green-500 border-green-500' : 'border-gray-500 hover:border-gray-400'}">
+                                                ${item.completed ? '<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
+                                            </button>
+                                            <div class="flex-1">
+                                                <p class="text-white text-sm ${item.completed ? 'line-through opacity-60' : ''}">${item.content}</p>
+                                            </div>
+                                            ${group.id !== 'trash' ? `
+                                                <button onclick="deleteTask('${group.id}', '${item.id}')" 
+                                                        class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-600 rounded flex-shrink-0">
+                                                    <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                </button>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            
+                            ${state.newTaskGroup !== group.id && group.id !== 'trash' ? `
+                                <button onclick="state.newTaskGroup = '${group.id}'; render();" 
+                                        class="w-full mt-2 p-2 text-left text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">
+                                    + アイテムを追加する
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            };
+        
+            // メインレイアウト
+            document.getElementById('app').innerHTML = `
+                <div class="min-h-screen p-6">
+                    <div class="mb-6 flex items-center justify-between">
+                        <h1 class="text-3xl font-bold text-white">my todo</h1>
+                        <div class="flex items-center gap-3">
+                            ${state.isSignedIn ? `
+                                <button onclick="exportToSpreadsheet()" 
+                                        class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg transition-colors text-xs">
+                                    📊 スプレッドシート同期
+                                </button>
+                                <div class="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-xs">
+                                    ✅ 接続済
+                                </div>
+                                <button onclick="handleSignOut()" 
+                                        class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded-lg text-xs transition-colors">
+                                    ログアウト
+                                </button>
+                            ` : `
+                                <button onclick="handleAuthClick()" 
+                                        class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors shadow-lg text-sm">
+                                    🔗 Google Driveに接続
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                    
+                    ${state.lastUpdated ? `
+                        <div class="text-xs text-gray-400 mb-2">
+                            最終更新: ${formatDateTime(state.lastUpdated)} | アプリバージョン: ${CONFIG.APP_VERSION}
+                        </div>
+                    ` : ''}
+                    
+                    <div class="space-y-4">
+                        <!-- 1行目 -->
+                        <div class="flex gap-4 overflow-x-auto pb-4">
+                            ${row0Groups.map((group, index) => renderGroup(group, index, 0)).join('')}
+                            
+                            ${state.isAddingGroup ? `
+                                <div class="flex-shrink-0 w-80 bg-gray-800 rounded-lg p-3">
+                                    <input type="text" 
+                                           value="${state.newGroupName}" 
+                                           onchange="state.newGroupName = this.value" 
+                                           onkeypress="if(event.key==='Enter') addGroup()" 
+                                           placeholder="グループ名を入力" 
+                                           class="w-full px-3 py-2 bg-gray-700 text-white border-none rounded focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2" 
+                                           autofocus/>
+                                    <div class="flex gap-2">
+                                        <button onclick="addGroup()" 
+                                                class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm">
+                                            追加
+                                        </button>
+                                        <button onclick="state.isAddingGroup = false; state.newGroupName = ''; render();" 
+                                                class="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-500 transition-colors text-sm">
+                                            キャンセル
+                                        </button>
+                                    </div>
+                                </div>
+                            ` : `
+                                <button onclick="state.isAddingGroup = true; render();" 
+                                        class="flex-shrink-0 w-80 h-12 bg-gray-800 hover:bg-gray-750 rounded-lg flex items-center justify-center text-gray-400 hover:text-white transition-colors">
+                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                    </svg>
+                                    グループを追加
+                                </button>
+                            `}
+                        </div>
+                        
+                        <!-- 2行目 -->
+                        <div class="flex gap-4 overflow-x-auto pb-4">
+                            ${row1Groups.map((group, index) => renderGroup(group, index, 1)).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+    </script>
+
+</body>
+</html>
