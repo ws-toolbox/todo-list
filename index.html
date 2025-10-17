@@ -520,7 +520,7 @@
                                 </div>
                             </div>
                         </div>
-                        `<div class="bg-gray-800 rounded-b-lg p-3 min-h-[400px]" onDragOver="handleDragOver(event)" onDrop="handleTaskDrop(event, '${group.id}')">
+                        <div class="bg-gray-800 rounded-b-lg p-3 min-h-[400px]" onDragOver="handleDragOver(event)" onDrop="handleTaskDrop(event, '${group.id}')">
                             ${state.newTaskGroup === group.id ? `
                                 <div class="mb-3 p-2 bg-gray-700 rounded">
                                     <input type="text" value="${state.newTaskContent}" 
@@ -598,11 +598,16 @@
                         </div>
                     </div>
                     
-                    ${state.lastUpdated ? `
-                        <div class="text-xs text-gray-400 mb-2">
-                            最終更新: ${formatDateTime(state.lastUpdated)} | アプリバージョン: ${CONFIG.APP_VERSION}
+                    <div class="flex items-center justify-between mb-2">
+                        ${state.lastUpdated ? `
+                            <div class="text-xs text-gray-400">
+                                最終更新: ${formatDateTime(state.lastUpdated)}
+                            </div>
+                        ` : '<div></div>'}
+                        <div class="text-xs text-gray-400">
+                            アプリ更新: ${CONFIG.APP_VERSION}
                         </div>
-                    ` : ''}
+                    </div>
                     
                     <div class="space-y-4">
                         <!-- 1行目 -->
