@@ -528,10 +528,36 @@
             render();
         }
         
+        // タスク編集用の自動保存遅延
+        const AUTO_SAVE_DELAY = 2000;
+        let debouncedSaveTimer = null;
+        let isTaskNameComposing = false;
+        let compositionJustEnded = false;
+
+        function scheduleDebouncedSave() {
+            if (debouncedSaveTimer) {
+                clearTimeout(debouncedSaveTimer);
+            }
+
+            debouncedSaveTimer = setTimeout(async function attemptSave() {
+                if (state.isSaving) {
+                    debouncedSaveTimer = setTimeout(attemptSave, 500);
+                    return;
+                }
+
+                debouncedSaveTimer = null;
+                await saveToDrive();
+            }, AUTO_SAVE_DELAY);
+        }
+
         // タスク内容保存
-        async function saveTaskContent(groupId, taskId, newContent) {
+        function saveTaskContent(groupId, taskId, newContent) {
             if (!newContent.trim()) return;
-            
+
+            const nameInput = document.getElementById('selected-task-name-input');
+            const selectionStart = nameInput ? nameInput.selectionStart : null;
+            const selectionEnd = nameInput ? nameInput.selectionEnd : null;
+
             state.groups = state.groups.map(group =>
                 group.id === groupId
                     ? {
@@ -542,13 +568,48 @@
                     }
                     : group
             );
-            await saveToDrive();
+
             render();
+
+            if (selectionStart !== null && selectionEnd !== null) {
+                setTimeout(() => {
+                    const refreshedInput = document.getElementById('selected-task-name-input');
+                    if (refreshedInput) {
+                        refreshedInput.focus();
+                        refreshedInput.setSelectionRange(selectionStart, selectionEnd);
+                    }
+                }, 0);
+            }
+
+            scheduleDebouncedSave();
         }
-        
-        // メモ保存用のタイマー
-        let memoSaveTimer = null;
-        
+
+        function handleTaskNameInput(event, groupId, taskId, input) {
+            if ((event && event.isComposing) || isTaskNameComposing) {
+                return;
+            }
+
+            if (compositionJustEnded) {
+                compositionJustEnded = false;
+                return;
+            }
+
+            saveTaskContent(groupId, taskId, input.value);
+        }
+
+        function handleTaskNameCompositionStart() {
+            isTaskNameComposing = true;
+        }
+
+        function handleTaskNameCompositionEnd(groupId, taskId, input) {
+            isTaskNameComposing = false;
+            compositionJustEnded = true;
+            saveTaskContent(groupId, taskId, input.value);
+            setTimeout(() => {
+                compositionJustEnded = false;
+            }, 0);
+        }
+
         // タスクメモ保存（遅延保存）
         function saveTaskMemo(groupId, taskId, newMemo) {
             // 即座にstateを更新
@@ -563,15 +624,29 @@
                     : group
             );
             
-            // 既存のタイマーをクリア
-            if (memoSaveTimer) {
-                clearTimeout(memoSaveTimer);
+            scheduleDebouncedSave();
+        }
+
+        function adjustMemoTextareaHeight(textarea) {
+            if (!textarea) return;
+            textarea.style.height = 'auto';
+            const computedStyle = window.getComputedStyle(textarea);
+            const minHeight = parseFloat(computedStyle.minHeight) || 0;
+            const maxHeight = parseFloat(computedStyle.maxHeight);
+            const scrollHeight = textarea.scrollHeight;
+            let targetHeight = Math.max(scrollHeight, minHeight);
+            if (maxHeight && !Number.isNaN(maxHeight)) {
+                targetHeight = Math.min(targetHeight, maxHeight);
+                textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
+            } else {
+                textarea.style.overflowY = 'hidden';
             }
-            
-            // 2秒後に保存
-            memoSaveTimer = setTimeout(async () => {
-                await saveToDrive();
-            }, 2000);
+            textarea.style.height = `${targetHeight}px`;
+        }
+
+        function handleMemoInput(groupId, taskId, textarea) {
+            adjustMemoTextareaHeight(textarea);
+            saveTaskMemo(groupId, taskId, textarea.value);
         }
         
         // タスク編集キャンセル
@@ -747,17 +822,22 @@
                             <div class="flex flex-col gap-4 flex-1 overflow-hidden">
                                 <div>
                                     <label class="block text-gray-400 text-xs mb-1">タスク名</label>
-                                    <input id="selected-task-name-input" type="text" value="${selectedTask.content}" 
-                                           oninput="saveTaskContent('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this.value)"
+                                    <input id="selected-task-name-input" type="text" value="${selectedTask.content}"
+                                           oninput="handleTaskNameInput(event, '${state.selectedTaskGroupId}', '${state.selectedTaskId}', this)"
+                                           oncompositionstart="handleTaskNameCompositionStart()"
+                                           oncompositionend="handleTaskNameCompositionEnd('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this)"
                                            class="w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500"/>
                                 </div>
                                 
                                 <div class="flex flex-col flex-1 overflow-hidden">
                                     <label class="block text-gray-400 text-xs mb-1">メモ</label>
-                                    <textarea 
-                                           oninput="saveTaskMemo('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this.value)"
+                                    <textarea
+                                           id="task-memo-textarea"
+                                           oninput="handleMemoInput('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this)"
+                                           onfocus="adjustMemoTextareaHeight(this)"
                                            placeholder="メモを入力..."
-                                           class="flex-1 w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">${selectedTask.memo || ''}</textarea>
+                                           style="max-height: calc(100vh - 300px);"
+                                           class="w-full min-h-[120px] px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500">${selectedTask.memo || ''}</textarea>
                                 </div>
                             </div>
                         </div>
@@ -803,6 +883,13 @@
                     }
                 }, 0);
             }
+
+            setTimeout(() => {
+                const memoTextarea = document.getElementById('task-memo-textarea');
+                if (memoTextarea) {
+                    adjustMemoTextareaHeight(memoTextarea);
+                }
+            }, 0);
         }
 
     </script>
