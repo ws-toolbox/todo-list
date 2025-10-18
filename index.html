@@ -662,7 +662,6 @@
                                             </button>
                                             <div class="flex-1">
                                                 <p class="text-white text-sm ${item.completed ? 'line-through opacity-60' : ''}">${item.content}</p>
-                                                ${item.memo ? `<p class="text-gray-400 text-xs mt-1 line-clamp-2">${item.memo}</p>` : ''}
                                             </div>
                                             <button onclick="event.stopPropagation(); deleteTask('${group.id}', '${item.id}')" 
                                                     class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-600 rounded flex-shrink-0">
@@ -737,7 +736,7 @@
                     ${selectedTask ? `
                     <!-- 右側編集パネル -->
                     <div class="fixed top-4 right-4 w-96 z-50">
-                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-2xl h-[calc(50vh-2rem)]">
+                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-2xl h-[calc(100vh-8rem)]">
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="text-white font-semibold">タスク編集</h3>
                                 <button onclick="deselectTask()" class="text-gray-400 hover:text-white transition-colors">
@@ -758,7 +757,7 @@
                                     <textarea 
                                            oninput="saveTaskMemo('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this.value)"
                                            placeholder="メモを入力..."
-                                           class="w-full h-[calc(100%-8rem)] px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">${selectedTask.memo || ''}</textarea>
+                                           class="w-full h-[calc(100vh-20rem)] px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">${selectedTask.memo || ''}</textarea>
                                 </div>
                             </div>
                         </div>
