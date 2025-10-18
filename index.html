@@ -20,7 +20,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '250118-1305'
+            APP_VERSION: '250118-1310'
         };
 
         let gapiInited = false;
@@ -736,7 +736,7 @@
                     ${selectedTask ? `
                     <!-- 右側編集パネル -->
                     <div class="fixed top-4 right-4 w-96 z-50">
-                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-2xl" style="max-height: calc(100vh - 300px);">
+                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-2xl flex flex-col" style="max-height: calc(100vh - 300px);">
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="text-white font-semibold">タスク編集</h3>
                                 <button onclick="deselectTask()" class="text-gray-400 hover:text-white transition-colors">
@@ -744,7 +744,7 @@
                                 </button>
                             </div>
                             
-                            <div class="space-y-4">
+                            <div class="flex flex-col gap-4 flex-1 overflow-hidden">
                                 <div>
                                     <label class="block text-gray-400 text-xs mb-1">タスク名</label>
                                     <input id="selected-task-name-input" type="text" value="${selectedTask.content}" 
@@ -752,13 +752,12 @@
                                            class="w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500"/>
                                 </div>
                                 
-                                <div>
+                                <div class="flex flex-col flex-1 overflow-hidden">
                                     <label class="block text-gray-400 text-xs mb-1">メモ</label>
                                     <textarea 
                                            oninput="saveTaskMemo('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this.value)"
                                            placeholder="メモを入力..."
-                                           class="w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto"
-                                           style="height: calc(100vh - 420px);">${selectedTask.memo || ''}</textarea>
+                                           class="flex-1 w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">${selectedTask.memo || ''}</textarea>
                                 </div>
                             </div>
                         </div>
