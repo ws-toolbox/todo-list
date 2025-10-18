@@ -590,11 +590,12 @@
                 return `
                     <div class="flex-shrink-0 w-80 relative" draggable="true" 
                          onDragStart="handleGroupDragStart(event, '${group.id}')" 
-                         onDragOver="handleDragOver(event)">
-                        <div class="absolute inset-y-0 left-0 w-10 z-10" 
+                         onDragOver="handleDragOver(event)"
+                         onDrop="handleGroupDrop(event, ${row}, ${index})">
+                        <div class="absolute inset-y-0 left-0 w-2 z-10 pointer-events-auto" 
                              onDragOver="handleDragOver(event)"
                              onDrop="handleGroupDrop(event, ${row}, ${index})"></div>
-                        <div class="absolute inset-y-0 right-0 w-10 z-10" 
+                        <div class="absolute inset-y-0 right-0 w-2 z-10 pointer-events-auto" 
                              onDragOver="handleDragOver(event)"
                              onDrop="handleGroupDrop(event, ${row}, ${index + 1})"></div>
                         <div class="${group.color} rounded-t-lg p-3 cursor-move">
