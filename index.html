@@ -532,7 +532,6 @@
         const AUTO_SAVE_DELAY = 2000;
         let debouncedSaveTimer = null;
         let isTaskNameComposing = false;
-        let compositionJustEnded = false;
 
         function scheduleDebouncedSave() {
             if (debouncedSaveTimer) {
@@ -540,6 +539,11 @@
             }
 
             debouncedSaveTimer = setTimeout(async function attemptSave() {
+                if (isTaskNameComposing) {
+                    debouncedSaveTimer = setTimeout(attemptSave, 200);
+                    return;
+                }
+
                 if (state.isSaving) {
                     debouncedSaveTimer = setTimeout(attemptSave, 500);
                     return;
@@ -589,11 +593,6 @@
                 return;
             }
 
-            if (compositionJustEnded) {
-                compositionJustEnded = false;
-                return;
-            }
-
             saveTaskContent(groupId, taskId, input.value);
         }
 
@@ -603,11 +602,7 @@
 
         function handleTaskNameCompositionEnd(groupId, taskId, input) {
             isTaskNameComposing = false;
-            compositionJustEnded = true;
             saveTaskContent(groupId, taskId, input.value);
-            setTimeout(() => {
-                compositionJustEnded = false;
-            }, 0);
         }
 
         // タスクメモ保存（遅延保存）
