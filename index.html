@@ -528,57 +528,95 @@
             render();
         }
         
-        // タスク内容保存
-        async function saveTaskContent(groupId, taskId, newContent) {
-            if (!newContent.trim()) return;
-            
-            state.groups = state.groups.map(group =>
-                group.id === groupId
-                    ? {
-                        ...group,
-                        items: group.items.map(item =>
-                            item.id === taskId ? { ...item, content: newContent } : item
-                        )
-                    }
-                    : group
-            );
-            await saveToDrive();
-            render();
-        }
-        
         // メモ保存用のタイマー
         let memoSaveTimer = null;
-        
-        // タスクメモ保存（遅延保存）
-        function saveTaskMemo(groupId, taskId, newMemo) {
-            // 即座にstateを更新
-            state.groups = state.groups.map(group =>
-                group.id === groupId
-                    ? {
-                        ...group,
-                        items: group.items.map(item =>
-                            item.id === taskId ? { ...item, memo: newMemo } : item
-                        )
-                    }
-                    : group
-            );
-            
-            // 既存のタイマーをクリア
-            if (memoSaveTimer) {
-                clearTimeout(memoSaveTimer);
-            }
-            
-            // 2秒後に保存
-            memoSaveTimer = setTimeout(async () => {
-                await saveToDrive();
-            }, 2000);
-        }
         
         // タスク編集キャンセル
         function cancelEditTask() {
             state.editingTaskId = null;
             state.editingTaskGroupId = null;
             render();
+        }
+
+        // タスク編集用の自動保存遅延
+        const AUTO_SAVE_DELAY = 2000;
+        let debouncedSaveTimer = null;
+        let isTaskNameComposing = false;
+
+        function scheduleDebouncedSave() {
+            if (debouncedSaveTimer) {
+                clearTimeout(debouncedSaveTimer);
+            }
+
+            debouncedSaveTimer = setTimeout(async function attemptSave() {
+                if (isTaskNameComposing) {
+                    debouncedSaveTimer = setTimeout(attemptSave, 200);
+                    return;
+                }
+
+                if (state.isSaving) {
+                    debouncedSaveTimer = setTimeout(attemptSave, 500);
+                    return;
+                }
+
+                debouncedSaveTimer = null;
+                await saveToDrive();
+            }, AUTO_SAVE_DELAY);
+        }
+
+        function handleTaskNameInput(event, groupId, taskId, input) {
+            if ((event && event.isComposing) || isTaskNameComposing) {
+                return;
+            }
+            
+            state.groups = state.groups.map(group =>
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map(item =>
+                            item.id === taskId ? { ...item, content: input.value } : item
+                        )
+                    }
+                    : group
+            );
+            
+            scheduleDebouncedSave();
+        }
+
+        function handleTaskNameCompositionStart() {
+            isTaskNameComposing = true;
+        }
+
+        function handleTaskNameCompositionEnd(groupId, taskId, input) {
+            isTaskNameComposing = false;
+            
+            state.groups = state.groups.map(group =>
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map(item =>
+                            item.id === taskId ? { ...item, content: input.value } : item
+                        )
+                    }
+                    : group
+            );
+            
+            scheduleDebouncedSave();
+        }
+
+        function handleMemoInput(groupId, taskId, textarea) {
+            state.groups = state.groups.map(group =>
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map(item =>
+                            item.id === taskId ? { ...item, memo: textarea.value } : item
+                        )
+                    }
+                    : group
+            );
+            
+            scheduleDebouncedSave();
         }
 
         function render() {
@@ -747,15 +785,17 @@
                             <div class="flex flex-col gap-4 flex-1 overflow-hidden">
                                 <div>
                                     <label class="block text-gray-400 text-xs mb-1">タスク名</label>
-                                    <input id="selected-task-name-input" type="text" value="${selectedTask.content}" 
-                                           oninput="saveTaskContent('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this.value)"
+                                    <input id="selected-task-name-input" type="text" value="${selectedTask.content}"
+                                           oninput="handleTaskNameInput(event, '${state.selectedTaskGroupId}', '${state.selectedTaskId}', this)"
+                                           oncompositionstart="handleTaskNameCompositionStart()"
+                                           oncompositionend="handleTaskNameCompositionEnd('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this)"
                                            class="w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500"/>
                                 </div>
                                 
                                 <div class="flex flex-col flex-1 overflow-hidden">
                                     <label class="block text-gray-400 text-xs mb-1">メモ</label>
-                                    <textarea 
-                                           oninput="saveTaskMemo('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this.value)"
+                                    <textarea
+                                           oninput="handleMemoInput('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this)"
                                            placeholder="メモを入力..."
                                            class="flex-1 w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">${selectedTask.memo || ''}</textarea>
                                 </div>
