@@ -610,6 +610,7 @@
             // 既存のタイマーをクリア
             if (memoSaveTimer) {
                 clearTimeout(memoSaveTimer);
+            }
             scheduleDebouncedSave();
         }
 
@@ -650,7 +651,12 @@
         function render() {
             const row0Groups = state.groups.filter(g => g.row === 0);
             const row1Groups = state.groups.filter(g => g.row === 1);
-        
+            
+            // ここに追加↓
+            const selectedTask = state.selectedTaskId 
+                ? state.groups.find(g => g.id === state.selectedTaskGroupId)?.items.find(i => i.id === state.selectedTaskId)
+                : null;
+            
             const renderGroup = (group, index, row) => {
                 const isEditing = state.editingGroupId === group.id;
                 return `
