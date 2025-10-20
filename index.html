@@ -596,7 +596,7 @@
             if (!textarea) return;
             textarea.style.height = 'auto';
             const scrollHeight = textarea.scrollHeight;
-            const maxHeight = window.innerHeight - 350; // 右下のステータスに被らないように
+            const maxHeight = window.innerHeight - 450; // 右下のステータスに被らないように余裕を持たせる
             textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px';
             textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
         }
