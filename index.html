@@ -21,7 +21,7 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '250118-1305'
+            APP_VERSION: '250118-1310'
         };
 
         let gapiInited = false;
@@ -541,7 +541,7 @@
         let isTaskNameComposing = false;
         let hasUnsavedChanges = false;
 
-        function saveTaskChanges() {
+function saveTaskChanges() {
             if (state.isSaving || !hasUnsavedChanges) return;
             
             // 入力フィールドから値を取得
@@ -549,10 +549,6 @@
             const memoTextarea = document.getElementById('task-memo-textarea');
             
             if (nameInput && state.selectedTaskId && state.selectedTaskGroupId) {
-                const selectionStart = nameInput.selectionStart;
-                const selectionEnd = nameInput.selectionEnd;
-                const memoScrollTop = memoTextarea ? memoTextarea.scrollTop : 0;
-                
                 state.groups = state.groups.map(group =>
                     group.id === state.selectedTaskGroupId
                         ? {
@@ -571,22 +567,27 @@
                 );
                 
                 hasUnsavedChanges = false;
-                saveToDrive();
-                render();
                 
-                // カーソル位置とスクロール位置を復元
-                setTimeout(() => {
-                    const restoredInput = document.getElementById('selected-task-name-input');
-                    const restoredTextarea = document.getElementById('task-memo-textarea');
-                    if (restoredInput && document.activeElement !== restoredInput) {
-                        restoredInput.focus();
-                        restoredInput.setSelectionRange(selectionStart, selectionEnd);
-                    }
-                    if (restoredTextarea) {
-                        restoredTextarea.scrollTop = memoScrollTop;
-                    }
-                }, 0);
+                // 左側のタスク表示だけを更新（タスク編集パネルは再描画しない）
+                updateTaskDisplay();
+                
+                saveToDrive();
             }
+        }
+        
+        function updateTaskDisplay() {
+            // 左側のグループ内のタスク表示のみを更新
+            state.groups.forEach(group => {
+                group.items.forEach(item => {
+                    const taskElements = document.querySelectorAll(`[onclick*="selectTask('${group.id}', '${item.id}')"]`);
+                    taskElements.forEach(el => {
+                        const contentP = el.querySelector('p');
+                        if (contentP) {
+                            contentP.textContent = item.content;
+                        }
+                    });
+                });
+            });
         }
 
         function handleTaskNameInput(event, groupId, taskId, input) {
