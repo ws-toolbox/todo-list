@@ -555,40 +555,22 @@
         }
 
         // タスク内容保存
-        async function saveTaskContent(groupId, taskId, newContent) {
-            if (!newContent.trim()) return;
-            
-
-            const nameInput = document.getElementById('selected-task-name-input');
-            const selectionStart = nameInput ? nameInput.selectionStart : null;
-            const selectionEnd = nameInput ? nameInput.selectionEnd : null;
-
-            state.groups = state.groups.map(group =>
-                group.id === groupId
-                    ? {
-                        ...group,
-                        items: group.items.map(item =>
-                            item.id === taskId ? { ...item, content: newContent } : item
-                        )
-                    }
-                    : group
-            );
-            await saveToDrive();
-
-            render();
-
-            if (selectionStart !== null && selectionEnd !== null) {
-                setTimeout(() => {
-                    const refreshedInput = document.getElementById('selected-task-name-input');
-                    if (refreshedInput) {
-                        refreshedInput.focus();
-                        refreshedInput.setSelectionRange(selectionStart, selectionEnd);
-                    }
-                }, 0);
+            function saveTaskContent(groupId, taskId, newContent) {
+                if (!newContent.trim()) return;
+                
+                state.groups = state.groups.map(group =>
+                    group.id === groupId
+                        ? {
+                            ...group,
+                            items: group.items.map(item =>
+                                item.id === taskId ? { ...item, content: newContent } : item
+                            )
+                        }
+                        : group
+                );
+                
+                scheduleDebouncedSave();
             }
-
-            scheduleDebouncedSave();
-        }
         
         // メモ保存用のタイマー
         let memoSaveTimer = null;
