@@ -523,14 +523,12 @@
         
         // タスク選択解除
         function deselectTask() {
+            saveTaskChanges();
             state.selectedTaskId = null;
             state.selectedTaskGroupId = null;
             render();
         }
-        
-        // メモ保存用のタイマー
-        let memoSaveTimer = null;
-        
+              
         // タスク編集キャンセル
         function cancelEditTask() {
             state.editingTaskId = null;
@@ -538,30 +536,14 @@
             render();
         }
 
-        // タスク編集用の自動保存遅延
-        const AUTO_SAVE_DELAY = 2000;
-        let debouncedSaveTimer = null;
+        // タスク編集用の保存管理
         let isTaskNameComposing = false;
+        let hasUnsavedChanges = false;
 
-        function scheduleDebouncedSave() {
-            if (debouncedSaveTimer) {
-                clearTimeout(debouncedSaveTimer);
-            }
-
-            debouncedSaveTimer = setTimeout(async function attemptSave() {
-                if (isTaskNameComposing) {
-                    debouncedSaveTimer = setTimeout(attemptSave, 200);
-                    return;
-                }
-
-                if (state.isSaving) {
-                    debouncedSaveTimer = setTimeout(attemptSave, 500);
-                    return;
-                }
-
-                debouncedSaveTimer = null;
-                await saveToDrive();
-            }, AUTO_SAVE_DELAY);
+        function saveTaskChanges() {
+            if (state.isSaving || !hasUnsavedChanges) return;
+            hasUnsavedChanges = false;
+            saveToDrive();
         }
 
         function handleTaskNameInput(event, groupId, taskId, input) {
@@ -580,7 +562,7 @@
                     : group
             );
             
-            scheduleDebouncedSave();
+            hasUnsavedChanges = true;
         }
 
         function handleTaskNameCompositionStart() {
@@ -601,9 +583,78 @@
                     : group
             );
             
-            scheduleDebouncedSave();
+            hasUnsavedChanges = true;
         }
 
+        function handleMemoInput(groupId, taskId, textarea) {
+            state.groups = state.groups.map(group =>
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map(item =>
+                            item.id === taskId ? { ...item, memo: textarea.value } : item
+                        )
+                    }
+                    : group
+            );
+            
+            hasUnsavedChanges = true;
+        }
+
+                function scheduleDebouncedSave() {
+            if (debouncedSaveTimer) {
+                clearTimeout(debouncedSaveTimer);
+            }
+            debouncedSaveTimer = setTimeout(async function attemptSave() {
+                if (isTaskNameComposing) {
+                    debouncedSaveTimer = setTimeout(attemptSave, 200);
+                    return;
+                }
+                if (state.isSaving) {
+                    debouncedSaveTimer = setTimeout(attemptSave, 500);
+                    return;
+                }
+                debouncedSaveTimer = null;
+                await saveToDrive();
+            }, AUTO_SAVE_DELAY);
+        }
+        function handleTaskNameInput(event, groupId, taskId, input) {
+            if ((event && event.isComposing) || isTaskNameComposing) {
+                return;
+            }
+            
+            state.groups = state.groups.map(group =>
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map(item =>
+                            item.id === taskId ? { ...item, content: input.value } : item
+                        )
+                    }
+                    : group
+            );
+            
+            scheduleDebouncedSave();
+        }
+        function handleTaskNameCompositionStart() {
+            isTaskNameComposing = true;
+        }
+        function handleTaskNameCompositionEnd(groupId, taskId, input) {
+            isTaskNameComposing = false;
+            
+            state.groups = state.groups.map(group =>
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map(item =>
+                            item.id === taskId ? { ...item, content: input.value } : item
+                        )
+                    }
+                    : group
+            );
+            
+            scheduleDebouncedSave();
+        }
         function handleMemoInput(groupId, taskId, textarea) {
             state.groups = state.groups.map(group =>
                 group.id === groupId
@@ -774,7 +825,7 @@
                     ${selectedTask ? `
                     <!-- 右側編集パネル -->
                     <div class="fixed top-4 right-4 w-96 z-50">
-                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-2xl flex flex-col" style="max-height: calc(100vh - 300px);">
+                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-2xl flex flex-col" style="max-height: calc(100vh - 150px);">
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="text-white font-semibold">タスク編集</h3>
                                 <button onclick="deselectTask()" class="text-gray-400 hover:text-white transition-colors">
