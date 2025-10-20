@@ -542,26 +542,39 @@
 
         function saveTaskChanges() {
             if (state.isSaving || !hasUnsavedChanges) return;
+            
+            // 入力フィールドから値を取得
+            const nameInput = document.getElementById('selected-task-name-input');
+            const memoTextarea = document.querySelector('textarea[oninput*="handleMemoInput"]');
+            
+            if (nameInput && state.selectedTaskId && state.selectedTaskGroupId) {
+                state.groups = state.groups.map(group =>
+                    group.id === state.selectedTaskGroupId
+                        ? {
+                            ...group,
+                            items: group.items.map(item =>
+                                item.id === state.selectedTaskId 
+                                    ? { 
+                                        ...item, 
+                                        content: nameInput.value,
+                                        memo: memoTextarea ? memoTextarea.value : item.memo
+                                    } 
+                                    : item
+                            )
+                        }
+                        : group
+                );
+            }
+            
             hasUnsavedChanges = false;
             saveToDrive();
+            render();
         }
 
         function handleTaskNameInput(event, groupId, taskId, input) {
             if ((event && event.isComposing) || isTaskNameComposing) {
                 return;
             }
-            
-            state.groups = state.groups.map(group =>
-                group.id === groupId
-                    ? {
-                        ...group,
-                        items: group.items.map(item =>
-                            item.id === taskId ? { ...item, content: input.value } : item
-                        )
-                    }
-                    : group
-            );
-            
             hasUnsavedChanges = true;
         }
 
@@ -571,34 +584,21 @@
 
         function handleTaskNameCompositionEnd(groupId, taskId, input) {
             isTaskNameComposing = false;
-            
-            state.groups = state.groups.map(group =>
-                group.id === groupId
-                    ? {
-                        ...group,
-                        items: group.items.map(item =>
-                            item.id === taskId ? { ...item, content: input.value } : item
-                        )
-                    }
-                    : group
-            );
-            
             hasUnsavedChanges = true;
         }
-
+        
         function handleMemoInput(groupId, taskId, textarea) {
-            state.groups = state.groups.map(group =>
-                group.id === groupId
-                    ? {
-                        ...group,
-                        items: group.items.map(item =>
-                            item.id === taskId ? { ...item, memo: textarea.value } : item
-                        )
-                    }
-                    : group
-            );
-            
+            adjustMemoTextareaHeight(textarea);
             hasUnsavedChanges = true;
+        }
+        
+        function adjustMemoTextareaHeight(textarea) {
+            if (!textarea) return;
+            textarea.style.height = 'auto';
+            const scrollHeight = textarea.scrollHeight;
+            const maxHeight = window.innerHeight - 350; // 右下のステータスに被らないように
+            textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px';
+            textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
         }
 
                 function scheduleDebouncedSave() {
@@ -840,15 +840,20 @@
                                            oninput="handleTaskNameInput(event, '${state.selectedTaskGroupId}', '${state.selectedTaskId}', this)"
                                            oncompositionstart="handleTaskNameCompositionStart()"
                                            oncompositionend="handleTaskNameCompositionEnd('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this)"
+                                           onkeydown="if(event.key==='Enter' && !event.isComposing) { event.preventDefault(); saveTaskChanges(); }"
+                                           onblur="saveTaskChanges()"
                                            class="w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500"/>
                                 </div>
                                 
                                 <div class="flex flex-col flex-1 overflow-hidden">
                                     <label class="block text-gray-400 text-xs mb-1">メモ</label>
-                                    <textarea
+                                    <textarea id="task-memo-textarea"
                                            oninput="handleMemoInput('${state.selectedTaskGroupId}', '${state.selectedTaskId}', this)"
+                                           onblur="saveTaskChanges()"
+                                           onfocus="adjustMemoTextareaHeight(this)"
                                            placeholder="メモを入力..."
-                                           class="flex-1 w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">${selectedTask.memo || ''}</textarea>
+                                           style="min-height: 120px; max-height: calc(100vh - 350px);"
+                                           class="w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto">${selectedTask.memo || ''}</textarea>
                                 </div>
                             </div>
                         </div>
@@ -894,6 +899,14 @@
                     }
                 }, 0);
             }
+            
+            // メモ欄の高さを調整
+            setTimeout(() => {
+                const memoTextarea = document.getElementById('task-memo-textarea');
+                if (memoTextarea) {
+                    adjustMemoTextareaHeight(memoTextarea);
+                }
+            }, 0);
         }
 
     </script>
