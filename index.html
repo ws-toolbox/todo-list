@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>カンバンボード</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js"></script>
@@ -616,75 +617,6 @@
             const maxHeight = window.innerHeight - 450; // 右下のステータスに被らないように余裕を持たせる
             textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px';
             textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
-        }
-
-                function scheduleDebouncedSave() {
-            if (debouncedSaveTimer) {
-                clearTimeout(debouncedSaveTimer);
-            }
-            debouncedSaveTimer = setTimeout(async function attemptSave() {
-                if (isTaskNameComposing) {
-                    debouncedSaveTimer = setTimeout(attemptSave, 200);
-                    return;
-                }
-                if (state.isSaving) {
-                    debouncedSaveTimer = setTimeout(attemptSave, 500);
-                    return;
-                }
-                debouncedSaveTimer = null;
-                await saveToDrive();
-            }, AUTO_SAVE_DELAY);
-        }
-        function handleTaskNameInput(event, groupId, taskId, input) {
-            if ((event && event.isComposing) || isTaskNameComposing) {
-                return;
-            }
-            
-            state.groups = state.groups.map(group =>
-                group.id === groupId
-                    ? {
-                        ...group,
-                        items: group.items.map(item =>
-                            item.id === taskId ? { ...item, content: input.value } : item
-                        )
-                    }
-                    : group
-            );
-            
-            scheduleDebouncedSave();
-        }
-        function handleTaskNameCompositionStart() {
-            isTaskNameComposing = true;
-        }
-        function handleTaskNameCompositionEnd(groupId, taskId, input) {
-            isTaskNameComposing = false;
-            
-            state.groups = state.groups.map(group =>
-                group.id === groupId
-                    ? {
-                        ...group,
-                        items: group.items.map(item =>
-                            item.id === taskId ? { ...item, content: input.value } : item
-                        )
-                    }
-                    : group
-            );
-            
-            scheduleDebouncedSave();
-        }
-        function handleMemoInput(groupId, taskId, textarea) {
-            state.groups = state.groups.map(group =>
-                group.id === groupId
-                    ? {
-                        ...group,
-                        items: group.items.map(item =>
-                            item.id === taskId ? { ...item, memo: textarea.value } : item
-                        )
-                    }
-                    : group
-            );
-            
-            scheduleDebouncedSave();
         }
 
         function render() {
