@@ -593,7 +593,7 @@
             saveTaskContent(groupId, taskId, input.value);
         }
 
-        // タスクメモ保存（遅延保存）
+        // タスクメモ保存(遅延保存)
         function saveTaskMemo(groupId, taskId, newMemo) {
             // 即座にstateを更新
             state.groups = state.groups.map(group =>
@@ -652,11 +652,10 @@
             const row0Groups = state.groups.filter(g => g.row === 0);
             const row1Groups = state.groups.filter(g => g.row === 1);
             
-            // ここに追加↓
             const selectedTask = state.selectedTaskId 
                 ? state.groups.find(g => g.id === state.selectedTaskGroupId)?.items.find(i => i.id === state.selectedTaskId)
                 : null;
-            
+        
             const renderGroup = (group, index, row) => {
                 const isEditing = state.editingGroupId === group.id;
                 return `
