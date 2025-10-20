@@ -545,9 +545,13 @@
             
             // 入力フィールドから値を取得
             const nameInput = document.getElementById('selected-task-name-input');
-            const memoTextarea = document.querySelector('textarea[oninput*="handleMemoInput"]');
+            const memoTextarea = document.getElementById('task-memo-textarea');
             
             if (nameInput && state.selectedTaskId && state.selectedTaskGroupId) {
+                const selectionStart = nameInput.selectionStart;
+                const selectionEnd = nameInput.selectionEnd;
+                const memoScrollTop = memoTextarea ? memoTextarea.scrollTop : 0;
+                
                 state.groups = state.groups.map(group =>
                     group.id === state.selectedTaskGroupId
                         ? {
@@ -564,11 +568,24 @@
                         }
                         : group
                 );
+                
+                hasUnsavedChanges = false;
+                saveToDrive();
+                render();
+                
+                // カーソル位置とスクロール位置を復元
+                setTimeout(() => {
+                    const restoredInput = document.getElementById('selected-task-name-input');
+                    const restoredTextarea = document.getElementById('task-memo-textarea');
+                    if (restoredInput && document.activeElement !== restoredInput) {
+                        restoredInput.focus();
+                        restoredInput.setSelectionRange(selectionStart, selectionEnd);
+                    }
+                    if (restoredTextarea) {
+                        restoredTextarea.scrollTop = memoScrollTop;
+                    }
+                }, 0);
             }
-            
-            hasUnsavedChanges = false;
-            saveToDrive();
-            render();
         }
 
         function handleTaskNameInput(event, groupId, taskId, input) {
@@ -778,7 +795,7 @@
                 : null;
             
             document.getElementById('app').innerHTML = `
-                <div class="min-h-screen p-4">
+                <div class="min-h-screen p-4" onclick="if(state.selectedTaskId) saveTaskChanges();">
                     <div class="space-y-4">
                         <!-- 1行目 -->
                         <div class="flex gap-4 overflow-x-auto pb-4 ${selectedTask ? 'pr-[25rem]' : ''}">
@@ -824,7 +841,7 @@
                     
                     ${selectedTask ? `
                     <!-- 右側編集パネル -->
-                    <div class="fixed top-4 right-4 w-96 z-50">
+                    <div class="fixed top-4 right-4 w-96 z-50" onclick="event.stopPropagation()">
                         <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-2xl flex flex-col" style="max-height: calc(100vh - 150px);">
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="text-white font-semibold">タスク編集</h3>
