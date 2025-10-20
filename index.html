@@ -615,7 +615,7 @@ function saveTaskChanges() {
             if (!textarea) return;
             textarea.style.height = 'auto';
             const scrollHeight = textarea.scrollHeight;
-            const maxHeight = window.innerHeight - 450; // 右下のステータスに被らないように余裕を持たせる
+            const maxHeight = window.innerHeight - 250; // 一番下まで広げる
             textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px';
             textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
         }
@@ -802,7 +802,7 @@ function saveTaskChanges() {
                                            onblur="saveTaskChanges()"
                                            onfocus="adjustMemoTextareaHeight(this)"
                                            placeholder="メモを入力..."
-                                           style="min-height: 120px; max-height: calc(100vh - 450px);"
+                                           style="min-height: 120px; max-height: calc(100vh - 250px);"
                                            class="w-full px-3 py-2 bg-gray-700 text-white text-sm rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto">${selectedTask.memo || ''}</textarea>
                                 </div>
                             </div>
