@@ -91,6 +91,7 @@
                 state.isSignedIn = true;
                 localStorage.setItem('google_access_token', JSON.stringify(gapi.client.getToken()));
                 await loadFromDrive();
+                startTokenMonitoring();
                 render();
             };
             if (gapi.client.getToken() === null) {
@@ -110,6 +111,7 @@
                     await gapi.client.drive.files.list({ pageSize: 1 });
                     state.isSignedIn = true;
                     await loadFromDrive();
+                    startTokenMonitoring();
                 } catch (error) {
                     localStorage.removeItem('google_access_token');
                 }
@@ -118,6 +120,7 @@
         }
 
         function handleSignOut() {
+            stopTokenMonitoring();
             gapi.client.setToken(null);
             localStorage.removeItem('google_access_token');
             accessToken = null;
@@ -146,6 +149,66 @@
             gapiLoaded();
             gisLoaded();
         });
+
+        // トークンの有効性チェックと自動更新
+        let tokenCheckInterval = null;
+
+        async function checkAndRefreshToken() {
+            if (!state.isSignedIn) return true;
+            
+            try {
+                // 簡単なAPI呼び出しでトークンの有効性を確認
+                await gapi.client.drive.files.list({ pageSize: 1 });
+                return true;
+            } catch (error) {
+                // トークンが無効な場合、再認証を試みる
+                console.log('トークンが無効です。再認証を試みます...');
+                try {
+                    await new Promise((resolve, reject) => {
+                        tokenClient.callback = async (resp) => {
+                            if (resp.error !== undefined) {
+                                reject(resp);
+                            } else {
+                                accessToken = gapi.client.getToken().access_token;
+                                localStorage.setItem('google_access_token', JSON.stringify(gapi.client.getToken()));
+                                console.log('トークンを自動更新しました');
+                                resolve();
+                            }
+                        };
+                        tokenClient.requestAccessToken({prompt: ''});
+                    });
+                    return true;
+                } catch (refreshError) {
+                    console.error('トークン更新に失敗しました:', refreshError);
+                    showMessage('認証の有効期限が切れました。再ログインしてください。', 'error');
+                    handleSignOut();
+                    return false;
+                }
+            }
+        }
+
+        // 30分ごとにトークンをチェック
+        function startTokenCheckInterval() {
+            if (tokenCheckInterval) {
+                clearInterval(tokenCheckInterval);
+            }
+            tokenCheckInterval = setInterval(() => {
+                checkAndRefreshToken();
+            }, 30 * 60 * 1000); // 30分
+        }
+
+        // ログイン時にインターバルを開始
+        function startTokenMonitoring() {
+            startTokenCheckInterval();
+        }
+
+        // ログアウト時にインターバルを停止
+        function stopTokenMonitoring() {
+            if (tokenCheckInterval) {
+                clearInterval(tokenCheckInterval);
+                tokenCheckInterval = null;
+            }
+        }
 
         // Google Drive接続
         async function loadFromDrive() {
@@ -213,6 +276,11 @@
         // Google Driveに保存
         async function saveToDrive() {
             if (!state.isSignedIn || !state.folderId || state.isSaving) return;
+            
+            // 保存前にトークンの有効性をチェック
+            const isValid = await checkAndRefreshToken();
+            if (!isValid) return;
+            
             state.isSaving = true;
             render();
             try {
