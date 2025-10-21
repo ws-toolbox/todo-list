@@ -210,50 +210,9 @@
             }
         }
         
-        // トークンリフレッシュ
-        async function refreshTokenIfNeeded() {
-            const token = gapi.client.getToken();
-            if (!token) return false;
-            
-            // トークンの有効期限をチェック（期限の5分前に更新）
-            const expiresAt = token.expires_at || 0;
-            const now = Date.now();
-            
-            if (expiresAt - now < 5 * 60 * 1000) { // 5分以内に期限切れ
-                try {
-                    await new Promise((resolve, reject) => {
-                        tokenClient.callback = async (resp) => {
-                            if (resp.error !== undefined) {
-                                reject(resp);
-                            } else {
-                                accessToken = gapi.client.getToken().access_token;
-                                localStorage.setItem('google_access_token', JSON.stringify(gapi.client.getToken()));
-                                resolve();
-                            }
-                        };
-                        tokenClient.requestAccessToken({prompt: ''});
-                    });
-                    return true;
-                } catch (error) {
-                    console.error('トークンリフレッシュ失敗:', error);
-                    return false;
-                }
-            }
-            return true;
-        }
-
         // Google Driveに保存
         async function saveToDrive() {
             if (!state.isSignedIn || !state.folderId || state.isSaving) return;
-            
-            // トークンリフレッシュ
-            const refreshed = await refreshTokenIfNeeded();
-            if (!refreshed) {
-                showMessage('認証の更新に失敗しました。再ログインしてください。', 'error');
-                handleSignOut();
-                return;
-            }
-            
             state.isSaving = true;
             render();
             try {
