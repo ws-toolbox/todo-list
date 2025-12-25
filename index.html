@@ -150,9 +150,7 @@
             gisLoaded();
         });
 
-        // トークンの有効性チェックと自動更新
-        let tokenCheckInterval = null;
-
+// トークンの有効性チェックと自動更新（保存時のみ）
         async function checkAndRefreshToken() {
             if (!state.isSignedIn) return true;
             
@@ -184,29 +182,6 @@
                     handleSignOut();
                     return false;
                 }
-            }
-        }
-
-        // 30分ごとにトークンをチェック
-        function startTokenCheckInterval() {
-            if (tokenCheckInterval) {
-                clearInterval(tokenCheckInterval);
-            }
-            tokenCheckInterval = setInterval(() => {
-                checkAndRefreshToken();
-            }, 30 * 60 * 1000); // 30分
-        }
-
-        // ログイン時にインターバルを開始
-        function startTokenMonitoring() {
-            startTokenCheckInterval();
-        }
-
-        // ログアウト時にインターバルを停止
-        function stopTokenMonitoring() {
-            if (tokenCheckInterval) {
-                clearInterval(tokenCheckInterval);
-                tokenCheckInterval = null;
             }
         }
 
