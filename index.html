@@ -150,7 +150,7 @@
             gisLoaded();
         });
 
-// トークンの有効性チェックと自動更新（保存時のみ）
+        // トークンの有効性チェックと自動更新（保存時のみ）
         async function checkAndRefreshToken() {
             if (!state.isSignedIn) return true;
             
@@ -159,29 +159,11 @@
                 await gapi.client.drive.files.list({ pageSize: 1 });
                 return true;
             } catch (error) {
-                // トークンが無効な場合、再認証を試みる
-                console.log('トークンが無効です。再認証を試みます...');
-                try {
-                    await new Promise((resolve, reject) => {
-                        tokenClient.callback = async (resp) => {
-                            if (resp.error !== undefined) {
-                                reject(resp);
-                            } else {
-                                accessToken = gapi.client.getToken().access_token;
-                                localStorage.setItem('google_access_token', JSON.stringify(gapi.client.getToken()));
-                                console.log('トークンを自動更新しました');
-                                resolve();
-                            }
-                        };
-                        tokenClient.requestAccessToken({prompt: ''});
-                    });
-                    return true;
-                } catch (refreshError) {
-                    console.error('トークン更新に失敗しました:', refreshError);
-                    showMessage('認証の有効期限が切れました。再ログインしてください。', 'error');
-                    handleSignOut();
-                    return false;
-                }
+                // トークンが無効な場合はエラーメッセージを表示してログアウト
+                console.error('トークンが無効です:', error);
+                showMessage('認証の有効期限が切れました。再ログインしてください。', 'error');
+                handleSignOut();
+                return false;
             }
         }
 
