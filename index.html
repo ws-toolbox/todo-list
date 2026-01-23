@@ -91,7 +91,6 @@
                 state.isSignedIn = true;
                 localStorage.setItem('google_access_token', JSON.stringify(gapi.client.getToken()));
                 await loadFromDrive();
-                startTokenMonitoring();
                 render();
             };
             if (gapi.client.getToken() === null) {
@@ -111,7 +110,6 @@
                     await gapi.client.drive.files.list({ pageSize: 1 });
                     state.isSignedIn = true;
                     await loadFromDrive();
-                    startTokenMonitoring();
                 } catch (error) {
                     localStorage.removeItem('google_access_token');
                 }
@@ -120,7 +118,6 @@
         }
 
         function handleSignOut() {
-            stopTokenMonitoring();
             gapi.client.setToken(null);
             localStorage.removeItem('google_access_token');
             accessToken = null;
@@ -150,7 +147,7 @@
             gisLoaded();
         });
 
-        // トークンの有効性チェックと自動更新（保存時のみ）
+        // トークンの有効性チェックと自動更新(保存時のみ)
         async function checkAndRefreshToken() {
             if (!state.isSignedIn) return true;
             
@@ -430,7 +427,7 @@
             render();
         }
         
-        // タスク削除（完全削除）
+        // タスク削除(完全削除)
         async function deleteTask(groupId, taskId) {
             if (!confirm('このタスクを削除しますか？')) return;
             
@@ -566,7 +563,7 @@
         let isTaskNameComposing = false;
         let hasUnsavedChanges = false;
 
-function saveTaskChanges() {
+        function saveTaskChanges() {
             if (state.isSaving || !hasUnsavedChanges) return;
             
             // 入力フィールドから値を取得
@@ -593,7 +590,7 @@ function saveTaskChanges() {
                 
                 hasUnsavedChanges = false;
                 
-                // 左側のタスク表示だけを更新（タスク編集パネルは再描画しない）
+                // 左側のタスク表示だけを更新(タスク編集パネルは再描画しない)
                 updateTaskDisplay();
                 
                 saveToDrive();
