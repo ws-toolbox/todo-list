@@ -21,7 +21,9 @@
             TODO_FOLDER_NAME: 'ToDoリスト',
             JSON_FILE_NAME: 'kanban_data.json',
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
-            APP_VERSION: '250118-1310'
+            LOCAL_STORAGE_KEY: 'kanban_data_cache_v1',
+            SAVE_DEBOUNCE_MS: 1500,
+            APP_VERSION: '260518-1200'
         };
 
         let gapiInited = false;
@@ -29,6 +31,8 @@
         let tokenClient;
         let accessToken = null;
         let fileId = null;
+        let saveTimerId = null;
+        let pendingDirty = false;
 
         let state = {
             groups: [
@@ -52,8 +56,74 @@
             isSignedIn: false,
             isSaving: false,
             folderId: null,
-            lastUpdated: null
+            lastUpdated: null,
+            lastSyncedUpdated: null,
+            isDriveLoading: false
         };
+
+        // ========== localStorage キャッシュ ==========
+        function saveToLocalCache() {
+            try {
+                localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY, JSON.stringify({
+                    groups: state.groups,
+                    lastUpdated: state.lastUpdated
+                }));
+            } catch (e) {
+                console.error('localStorage 保存失敗:', e);
+            }
+        }
+
+        function loadFromLocalCache() {
+            try {
+                const raw = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY);
+                if (!raw) return false;
+                const data = JSON.parse(raw);
+                if (data.groups) {
+                    state.groups = data.groups;
+                    state.lastUpdated = data.lastUpdated || null;
+                    return true;
+                }
+            } catch (e) {
+                console.error('localStorage 読み込み失敗:', e);
+            }
+            return false;
+        }
+
+        // ========== 保存スケジューリング (debounce) ==========
+        function persistState() {
+            state.lastUpdated = new Date().toISOString();
+            saveToLocalCache();
+            scheduleSave();
+        }
+
+        function scheduleSave() {
+            if (!state.isSignedIn) {
+                pendingDirty = true;
+                return;
+            }
+            pendingDirty = true;
+            if (saveTimerId) clearTimeout(saveTimerId);
+            saveTimerId = setTimeout(() => {
+                saveTimerId = null;
+                if (state.isSaving) {
+                    // 進行中の保存がある場合は少し待って再試行
+                    scheduleSave();
+                    return;
+                }
+                saveToDrive();
+            }, CONFIG.SAVE_DEBOUNCE_MS);
+        }
+
+        // ページ離脱前に保存中の変更があれば flush
+        window.addEventListener('beforeunload', (e) => {
+            if (pendingDirty && state.isSignedIn) {
+                // sendBeacon で同期保存（best effort）
+                try {
+                    if (saveTimerId) clearTimeout(saveTimerId);
+                    saveToDrive();
+                } catch (_) {}
+            }
+        });
 
         // ========== Google API初期化 ==========
         function gapiLoaded() {
@@ -90,8 +160,9 @@
                 accessToken = gapi.client.getToken().access_token;
                 state.isSignedIn = true;
                 localStorage.setItem('google_access_token', JSON.stringify(gapi.client.getToken()));
-                await loadFromDrive();
                 render();
+                // Drive 読み込みはバックグラウンド
+                loadFromDrive({ silent: false });
             };
             if (gapi.client.getToken() === null) {
                 tokenClient.requestAccessToken({prompt: 'consent'});
@@ -102,19 +173,22 @@
 
         async function tryAutoSignIn() {
             const savedToken = localStorage.getItem('google_access_token');
-            if (savedToken) {
-                try {
-                    const token = JSON.parse(savedToken);
-                    gapi.client.setToken(token);
-                    accessToken = token.access_token;
-                    await gapi.client.drive.files.list({ pageSize: 1 });
-                    state.isSignedIn = true;
-                    await loadFromDrive();
-                } catch (error) {
-                    localStorage.removeItem('google_access_token');
-                }
+            if (!savedToken) {
+                render();
+                return;
             }
-            render();
+            try {
+                const token = JSON.parse(savedToken);
+                gapi.client.setToken(token);
+                accessToken = token.access_token;
+                state.isSignedIn = true;
+                render();
+                // Drive 読み込みはバックグラウンドで実行（UI を待たせない）
+                loadFromDrive();
+            } catch (error) {
+                localStorage.removeItem('google_access_token');
+                render();
+            }
         }
 
         function handleSignOut() {
@@ -143,38 +217,48 @@
         }
 
         window.addEventListener('load', () => {
+            // 1. まず localStorage から即描画（Drive を待たない）
+            loadFromLocalCache();
+            render();
+            // 2. Google API を裏で初期化
             gapiLoaded();
             gisLoaded();
         });
 
-        // トークンの有効性チェックと自動更新(保存時のみ)
-        async function checkAndRefreshToken() {
-            if (!state.isSignedIn) return true;
-            
-            try {
-                // 簡単なAPI呼び出しでトークンの有効性を確認
-                await gapi.client.drive.files.list({ pageSize: 1 });
-                return true;
-            } catch (error) {
-                // トークンが無効な場合はエラーメッセージを表示してログアウト
-                console.error('トークンが無効です:', error);
-                showMessage('認証の有効期限が切れました。再ログインしてください。', 'error');
-                handleSignOut();
-                return false;
-            }
-        }
-
-        // Google Drive接続
-        async function loadFromDrive() {
+        // Google Drive接続（バックグラウンド読み込み）
+        async function loadFromDrive(options = {}) {
+            const { silent = true, force = false } = options;
+            if (state.isDriveLoading) return;
+            state.isDriveLoading = true;
+            render();
             try {
                 let parentFolderId = await findOrCreateFolder(CONFIG.PARENT_FOLDER_NAME, 'root');
                 let todoFolderId = await findOrCreateFolder(CONFIG.TODO_FOLDER_NAME, parentFolderId);
                 state.folderId = todoFolderId;
-                await loadJsonData();
-                showMessage('Google Driveに接続しました', 'success');
+                await loadJsonData({ force });
+                if (!silent) showMessage('Google Driveから取得しました', 'success');
             } catch (error) {
-                showMessage('エラー: ' + (error.result?.error?.message || error.message), 'error');
+                const msg = error.result?.error?.message || error.message;
+                // 401/403 は認証切れとして扱う
+                if (error.status === 401 || error.result?.error?.code === 401) {
+                    showMessage('認証の有効期限が切れました。再ログインしてください。', 'error');
+                    handleSignOut();
+                } else {
+                    showMessage('Drive 取得エラー: ' + msg, 'error');
+                }
+            } finally {
+                state.isDriveLoading = false;
+                render();
             }
+        }
+
+        // 手動再取得（ヘッダーボタンから呼ぶ）
+        async function manualRefresh() {
+            if (!state.isSignedIn) {
+                showMessage('先にGoogle Driveに接続してください', 'error');
+                return;
+            }
+            await loadFromDrive({ silent: false, force: true });
         }
         
         // フォルダ検索または作成
@@ -198,8 +282,9 @@
             return createResponse.result.id;
         }
         
-        // JSONデータ読み込み
-        async function loadJsonData() {
+        // JSONデータ読み込み (lastUpdated 比較でローカル/リモートの新しい方を採用)
+        async function loadJsonData(options = {}) {
+            const { force = false } = options;
             if (!state.folderId) return;
             try {
                 const response = await gapi.client.drive.files.list({
@@ -216,29 +301,101 @@
                     });
                     if (fileContent.body) {
                         const data = JSON.parse(fileContent.body);
-                        state.groups = data.groups || state.groups;
-                        state.lastUpdated = data.lastUpdated || null;
+                        const remoteUpdated = data.lastUpdated || null;
+                        const localUpdated = state.lastUpdated || null;
+
+                        // 強制取得、ローカルが空、リモートが新しい場合は採用
+                        const remoteIsNewer = remoteUpdated && (!localUpdated || remoteUpdated > localUpdated);
+                        if (force || !localUpdated || remoteIsNewer) {
+                            state.groups = data.groups || state.groups;
+                            state.lastUpdated = remoteUpdated;
+                            state.lastSyncedUpdated = remoteUpdated;
+                            saveToLocalCache();
+                        } else if (pendingDirty && remoteUpdated) {
+                            // ローカルに未同期の変更があり、かつリモートにも内容がある
+                            // → ユーザーに確認（オフライン編集中に他デバイスが更新した可能性）
+                            const ok = confirm(
+                                'ローカルに未同期の変更があります。\n' +
+                                `ローカル: ${formatDateTime(localUpdated)}\n` +
+                                `リモート: ${formatDateTime(remoteUpdated)}\n\n` +
+                                'OK = ローカル変更を保持してリモートに反映\n' +
+                                'キャンセル = リモートを取得（ローカル変更は破棄）'
+                            );
+                            if (ok) {
+                                state.lastSyncedUpdated = remoteUpdated;
+                                scheduleSave();
+                            } else {
+                                state.groups = data.groups || state.groups;
+                                state.lastUpdated = remoteUpdated;
+                                state.lastSyncedUpdated = remoteUpdated;
+                                pendingDirty = false;
+                                saveToLocalCache();
+                            }
+                        } else {
+                            // ローカルが新しいが未同期変更なし → 同期済とみなす
+                            state.lastSyncedUpdated = remoteUpdated;
+                        }
                     }
                 } else {
                     fileId = null;
+                    state.lastSyncedUpdated = null;
+                    // リモートにファイルが無い場合、ローカルに変更があれば保存
+                    if (state.lastUpdated) scheduleSave();
                 }
             } catch (error) {
+                console.error('loadJsonData エラー:', error);
                 fileId = null;
             }
         }
         
-        // Google Driveに保存
+        // Google Driveに保存（debounce で呼び出される）
         async function saveToDrive() {
             if (!state.isSignedIn || !state.folderId || state.isSaving) return;
-            
-            // 保存前にトークンの有効性をチェック
-            const isValid = await checkAndRefreshToken();
-            if (!isValid) return;
-            
+            if (!pendingDirty) return;
+
             state.isSaving = true;
             render();
             try {
-                const now = new Date().toISOString();
+                // --- 競合チェック: Drive 側の lastUpdated が自分の lastSyncedUpdated より新しいか確認 ---
+                if (fileId) {
+                    try {
+                        const remoteCheck = await gapi.client.drive.files.get({
+                            fileId: fileId,
+                            alt: 'media'
+                        });
+                        if (remoteCheck.body) {
+                            const remoteData = JSON.parse(remoteCheck.body);
+                            const remoteUpdated = remoteData.lastUpdated || null;
+                            const isConflict = remoteUpdated
+                                && state.lastSyncedUpdated
+                                && remoteUpdated > state.lastSyncedUpdated;
+                            if (isConflict) {
+                                const ok = confirm(
+                                    '他のデバイスで更新されています。\n' +
+                                    `リモート更新: ${formatDateTime(remoteUpdated)}\n` +
+                                    `ローカル更新: ${formatDateTime(state.lastUpdated)}\n\n` +
+                                    'OK = ローカルを優先して上書き保存\n' +
+                                    'キャンセル = リモートを取得（ローカル変更は破棄）'
+                                );
+                                if (!ok) {
+                                    // リモート優先で再読み込み
+                                    state.groups = remoteData.groups || state.groups;
+                                    state.lastUpdated = remoteUpdated;
+                                    state.lastSyncedUpdated = remoteUpdated;
+                                    saveToLocalCache();
+                                    pendingDirty = false;
+                                    showMessage('リモートの内容を取得しました', 'success');
+                                    return;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // 競合チェック失敗時は通常保存にフォールバック
+                        console.warn('競合チェック失敗（保存は継続）:', e);
+                    }
+                }
+
+                const now = state.lastUpdated || new Date().toISOString();
                 const content = JSON.stringify({ groups: state.groups, lastUpdated: now });
                 const file = new Blob([content], { type: 'application/json' });
                 const metadata = {
@@ -257,11 +414,18 @@
                     headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
                     body: form
                 });
+                if (response.status === 401) {
+                    showMessage('認証の有効期限が切れました。再ログインしてください。', 'error');
+                    handleSignOut();
+                    return;
+                }
                 if (!response.ok) throw new Error(`保存に失敗: ${response.status}`);
                 const result = await response.json();
                 if (!fileId) fileId = result.id;
                 state.lastUpdated = now;
-                showMessage('保存しました！', 'success');
+                state.lastSyncedUpdated = now;
+                pendingDirty = false;
+                saveToLocalCache();
             } catch (error) {
                 showMessage('保存に失敗: ' + error.message, 'error');
             } finally {
@@ -372,12 +536,12 @@
             
             state.draggedItem = null;
             state.draggedFrom = null;
-            await saveToDrive();
+            persistState();
             render();
         }
-        
+
         // ドロップ: グループ
-        async function handleGroupDrop(e, targetRow, targetIndex) {
+        function handleGroupDrop(e, targetRow, targetIndex) {
             e.preventDefault();
             if (!state.draggedGroup) return;
             const draggedGroupData = state.groups.find(g => g.id === state.draggedGroup);
@@ -387,30 +551,30 @@
             const otherRowGroups = otherGroups.filter(g => g.row !== targetRow);
             state.groups = [...otherRowGroups, ...targetRowGroups];
             state.draggedGroup = null;
-            await saveToDrive();
+            persistState();
             render();
         }
         
         // タスク追加
-        async function addTask(groupId) {
+        function addTask(groupId) {
             if (!state.newTaskContent.trim()) return;
-            const newTask = { 
-                id: Date.now().toString(), 
-                content: state.newTaskContent, 
+            const newTask = {
+                id: Date.now().toString(),
+                content: state.newTaskContent,
                 completed: false,
                 memo: ''
             };
-            state.groups = state.groups.map(group => 
+            state.groups = state.groups.map(group =>
                 group.id === groupId ? { ...group, items: [...group.items, newTask] } : group
             );
             state.newTaskContent = '';
             state.newTaskGroup = null;
-            await saveToDrive();
+            persistState();
             render();
         }
-        
+
         // グループ追加
-        async function addGroup() {
+        function addGroup() {
             if (!state.newGroupName.trim()) return;
             const colors = ['bg-blue-800', 'bg-red-800', 'bg-indigo-800', 'bg-pink-800', 'bg-teal-800'];
             const newGroup = {
@@ -423,26 +587,26 @@
             state.groups = [...state.groups, newGroup];
             state.newGroupName = '';
             state.isAddingGroup = false;
-            await saveToDrive();
+            persistState();
             render();
         }
-        
+
         // タスク削除(完全削除)
-        async function deleteTask(groupId, taskId) {
+        function deleteTask(groupId, taskId) {
             if (!confirm('このタスクを削除しますか？')) return;
-            
+
             state.groups = state.groups.map(group => {
                 if (group.id === groupId) {
                     return { ...group, items: group.items.filter(item => item.id !== taskId) };
                 }
                 return group;
             });
-            await saveToDrive();
+            persistState();
             render();
         }
         
         // タスク完了トグル
-        async function toggleComplete(groupId, taskId) {
+        function toggleComplete(groupId, taskId) {
             const item = state.groups.find(g => g.id === groupId)?.items.find(i => i.id === taskId);
             if (!item) return;
             
@@ -477,16 +641,16 @@
                 }
                 return group;
             });
-            
-            await saveToDrive();
+
+            persistState();
             render();
         }
-        
+
         // グループ削除
-        async function deleteGroup(groupId) {
+        function deleteGroup(groupId) {
             if (confirm('このグループを削除しますか？\n中のタスクもすべて削除されます。')) {
                 state.groups = state.groups.filter(group => group.id !== groupId);
-                await saveToDrive();
+                persistState();
                 render();
             }
         }
@@ -509,7 +673,7 @@
         }
         
         // グループ名保存
-        async function saveGroupName(groupId) {
+        function saveGroupName(groupId) {
             if (!state.editingGroupName.trim()) {
                 cancelEditGroupName();
                 return;
@@ -519,7 +683,7 @@
             );
             state.editingGroupId = null;
             state.editingGroupName = '';
-            await saveToDrive();
+            persistState();
             render();
         }
         
@@ -589,11 +753,11 @@
                 );
                 
                 hasUnsavedChanges = false;
-                
+
                 // 左側のタスク表示だけを更新(タスク編集パネルは再描画しない)
                 updateTaskDisplay();
-                
-                saveToDrive();
+
+                persistState();
             }
         }
         
@@ -836,22 +1000,32 @@
                     <div class="fixed bottom-4 right-4 bg-gray-800 rounded-lg shadow-xl p-3 border border-gray-700">
                         <div class="flex flex-col gap-2">
                             ${state.isSignedIn ? `
-                                <button onclick="exportToSpreadsheet()" 
+                                <button onclick="manualRefresh()"
+                                        ${state.isDriveLoading ? 'disabled' : ''}
+                                        class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg transition-colors text-xs whitespace-nowrap disabled:opacity-50">
+                                    ${state.isDriveLoading ? '⏳ 取得中...' : '🔄 再取得'}
+                                </button>
+                                <button onclick="exportToSpreadsheet()"
                                         class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg transition-colors text-xs whitespace-nowrap">
                                     📊 スプレッドシート同期
                                 </button>
-                                <div class="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-xs text-center">
-                                    ✅ 接続済
+                                <div class="${state.isSaving ? 'bg-yellow-100 text-yellow-700' : (pendingDirty ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700')} px-3 py-1 rounded-lg text-xs text-center">
+                                    ${state.isSaving ? '💾 保存中...' : (pendingDirty ? '✏️ 未同期' : '✅ 同期済')}
                                 </div>
-                                <button onclick="handleSignOut()" 
+                                <button onclick="handleSignOut()"
                                         class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs transition-colors">
                                     ログアウト
                                 </button>
                             ` : `
-                                <button onclick="handleAuthClick()" 
+                                <button onclick="handleAuthClick()"
                                         class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg font-semibold transition-colors shadow-lg text-xs whitespace-nowrap">
                                     🔗 Google Driveに接続
                                 </button>
+                                ${state.lastUpdated ? `
+                                <div class="bg-gray-700 text-gray-300 px-3 py-1 rounded-lg text-xs text-center">
+                                    📂 ローカル表示中
+                                </div>
+                                ` : ''}
                             `}
                             <div class="text-xs text-gray-400 text-center pt-2 border-t border-gray-700">
                                 ${state.lastUpdated ? `更新: ${formatDateTime(state.lastUpdated)}<br>` : ''}
