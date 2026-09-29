@@ -23,7 +23,7 @@
             SPREADSHEET_ID: '1YPV5vgH4YqluO4929Pwl3QOoLrkWX0gsSLMS7osEY5E',
             LOCAL_STORAGE_KEY: 'kanban_data_cache_v1',
             SAVE_DEBOUNCE_MS: 1500,
-            APP_VERSION: '260518-1200'
+            APP_VERSION: '260929-1200'
         };
 
         let gapiInited = false;
@@ -143,6 +143,9 @@
             tokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: CONFIG.CLIENT_ID,
                 scope: CONFIG.SCOPES,
+                // 同じクライアントIDで他アプリ(YouTube等)に許可した権限を合算しない
+                // (drive.file と youtube.force-ssl は同時要求できず 400 invalid_request になる)
+                include_granted_scopes: false,
                 callback: ''
             });
             gisInited = true;
